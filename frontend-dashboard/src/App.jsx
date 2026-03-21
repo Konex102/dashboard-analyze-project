@@ -645,7 +645,7 @@ function App() {
     <div className="dashboard-app">
       <header className="hero">
         <div className="hero-title">
-          <img className="hero-logo" src="/Sinarmas_logo.webp" alt="Logo" />
+          <img className="hero-logo" src="" alt="Logo" />
           <h1>INTERACTIVE DASHBOARD</h1>
         </div>
 
