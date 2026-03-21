@@ -1,0 +1,15 @@
+# Python
+backend-dashboard/__pycache__/
+backend-dashboard/uploads/
+backend-dashboard/*.pyc
+backend-dashboard/.env
+backend-dashboard/package-lock.json
+
+# Node
+frontend-dashboard/node_modules/
+frontend-dashboard/dist/
+frontend-dashboard/.env.local
+
+# OS
+.DS_Store
+Thumbs.db
