@@ -10,7 +10,7 @@ const CHART_OPTIONS = [
 ];
 
 function App() {
-  const backendUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  const backendUrl = "https://dashboard-analyze-project.vercel.app/health";
   const [uploadFile, setUploadFile] = useState([]);
   const [files, setFiles] = useState([]);
   const [selectedFile, setSelectedFile] = useState("");
@@ -637,9 +637,7 @@ function App() {
     return value.toLocaleString(undefined, { maximumFractionDigits: 3 });
   };
 
-  // ── Helper: render dataset info badges dynamically ──────────────────────
   const datasetInfoEntries = Object.entries(datasetInfo);
-  // ───────────────────────────────────────────────────────────────────────
 
   return (
     <div className="dashboard-app">
