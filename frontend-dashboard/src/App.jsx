@@ -10,7 +10,7 @@ const CHART_OPTIONS = [
 ];
 
 function App() {
-  const backendUrl = "https://dashboard-analyze-project.vercel.app/health";
+  const backendUrl = "https://dashboard-analyze-project.vercel.app/";
   const [uploadFile, setUploadFile] = useState([]);
   const [files, setFiles] = useState([]);
   const [selectedFile, setSelectedFile] = useState("");
