@@ -23,8 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
-upload_dir = os.path.join(script_dir, "uploads")
+upload_dir = "/tmp/uploads"
 os.makedirs(upload_dir, exist_ok=True)
 metadata_path = os.path.join(upload_dir, "_metadata.json")
 
