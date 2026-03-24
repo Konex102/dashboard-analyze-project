@@ -220,16 +220,26 @@ def _read_dataframe(file_path: str, sheet_name: str | int = 0) -> pd.DataFrame:
 
 def _datetime_data(df:pd.DataFrame, time_col:str, date_col:str|None)->pd.Series:
     raw = df[time_col].astype(str).str.strip()
+    
     if date_col and date_col in df.columns:
-        date_raw = df[date_col].astype(str).str.strip()
-        combined = date_raw + " " + raw
-        parsed = pd.to_datetime(combined,dayFirst=True,errors="coerce")
-        if parsed.notna().sum()>=2:
-            return parsed
-        
+        date_series = pd.to_datetime(df[date_col],dayfirst=True,errors="coerce")
+
+        if date_series.notna().sum() >= 2:
+            date_raw = date_series.dt.strftime("%Y-%m-%d")
+            combined = date_raw + " " + raw
+            parsed = pd.to_datetime(combined,errors="coerce")
+            if parsed.notna().sum()>=2:
+                return parsed
+            
     parsed = pd.to_datetime(raw,format="%H:%M:%S",errors="coerce")
     if parsed.notna().sum()<2:
         parsed = pd.to_datetime(raw,errors="coerce")
+
+    if parsed.notna().sum()>=2:
+        diffs = parsed.diff()
+        rollover = (diffs<pd.Timedelta(hours=-1)).cumsum()
+        parsed = parsed + pd.to_timedelta(rollover,unit="D")
+    
     return parsed
 
 def _summary_statistics(df: pd.DataFrame) -> dict | None:
@@ -462,7 +472,7 @@ async def timestamp_calculation(request: timestampRequest):
     parsed = _datetime_data(df,request.timestamp_column,request.date_column)
     
     if parsed.notna().sum() < 2:
-        raise HTTPException(status_code=400, detailf=f"Kolom Tidak Valid")
+        raise HTTPException(status_code=400, detail=f"Kolom Tidak Valid")
     invalid_count = int(parsed.isna().sum())
     parsed = parsed.dropna().sort_values()
     start_time = parsed.iloc[0]
@@ -475,8 +485,8 @@ async def timestamp_calculation(request: timestampRequest):
         "timestamp_column": request.timestamp_column,
         "total_records": int(len(parsed)),
         "invalid_rows_skipped": invalid_count,
-        "start_time": start_time.strftime("%H:%M:%S"),
-        "end_time":   end_time.strftime("%H:%M:%S"),
+        "start_time": start_time.strftime("%d/%m/%Y %H:%M:%S"),
+        "end_time":   end_time.strftime("%d/%m/%Y %H:%M:%S"),
         "total_duration": {
             "second": total_secs,
             "minutes": round(total_secs / 60, 2),
@@ -514,8 +524,8 @@ async def counting_auto_mode(request: autoCounting):
             "segment": int(group_id),
             "state": state_val,
             "label": "Auto" if state_val == 1 else "Manual",
-            "start_time": start_time.strftime("%H:%M:%S"),
-            "end_time":   end_time.strftime("%H:%M:%S"),
+            "start_time": start_time.strftime("%d/%m/%Y %H:%M:%S"),
+            "end_time":   end_time.strftime("%d/%m/%Y %H:%M:%S"),
             "duration_seconds": dur_secs,
             "duration_human": f"{h:02d}:{m:02d}:{s:02d}",
             "record_count": len(group_df),

@@ -339,7 +339,7 @@ function App() {
           "";
         setTimestampColumn(autoDetectedTime);
 
-        const dateKeywords = ["date", "DATE", "tanggal"];
+        const dateKeywords = ["date", "tanggal"];
         const detectionDate =
           allColumns.find((col) =>
             dateKeywords.some((kw) => col.toLowerCase().includes(kw)),
@@ -897,6 +897,25 @@ function App() {
                 value={timestampColumn}
                 onChange={(e) => {
                   setTimestampColumn(e.target.value);
+                  setDurationResult(null);
+                  setAutoCountingResult(null);
+                }}
+                disabled={!columns.length}
+              >
+                <option value="">(None)</option>
+                {columns.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              Date Selection
+              <select
+                value={dateTime}
+                onChange={(event) => {
+                  setDateTime(event.target.value);
                   setDurationResult(null);
                   setAutoCountingResult(null);
                 }}
