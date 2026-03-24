@@ -79,12 +79,14 @@ class PlotRequest(BaseModel):
 class timestampRequest(BaseModel):
     filename: str
     timestamp_column: str
+    date_column: str | None = None
     sheet_name: str | int = 0
 
 class autoCounting(BaseModel):
     filename: str
     timestamp_column: str
     state_column: str
+    date_column : str | None = None
     sheet_name: str | int = 0
 
 class SPVRequest(BaseModel):
@@ -216,6 +218,19 @@ def _read_dataframe(file_path: str, sheet_name: str | int = 0) -> pd.DataFrame:
 
     raise HTTPException(status_code=400, detail="Unsupported file format.")
 
+def _datetime_data(df:pd.DataFrame, time_col:str, date_col:str|None)->pd.Series:
+    raw = df[time_col].astype(str).str.strip()
+    if date_col and date_col in df.columns:
+        date_raw = df[date_col].astype(str).str.strip()
+        combined = date_raw + "" + raw
+        parsed = pd.to_datetime(combined,firstDay=True,errors="coerce")
+        if parsed.notna().sum()>=2:
+            return parsed
+        
+    parsed = pd.to_datetime(raw,format="%H:%M:%S",erros="coerce")
+    if parsed.notna().sum()<2:
+        parsed = pd.to_datetime(raw,errors="coerce")
+    return parsed
 
 def _summary_statistics(df: pd.DataFrame) -> dict | None:
     numeric_cols = df.select_dtypes(include="number").columns
@@ -444,9 +459,9 @@ async def timestamp_calculation(request: timestampRequest):
             detail=f"Kolom '{request.timestamp_column}' tidak ada. "
                    f"Kolom tersedia: {df.columns.tolist()}")
     raw_series = df[request.timestamp_column].astype(str).str.strip()
-    parsed = pd.to_datetime(raw_series, format="%H:%M:%S", errors="coerce")
+    parsed = _datetime_data(df,request.timestamp_column,request.date_column)
     if parsed.notna().sum() < 2:
-        parsed = pd.to_datetime(raw_series, errors="coerce")
+        parsed = _datetime_data(df,request.timestamp_column,request.date_column)
     invalid_count = int(parsed.isna().sum())
     if parsed.notna().sum() < 2:
         raise HTTPException(status_code=400,
@@ -481,9 +496,9 @@ async def counting_auto_mode(request: autoCounting):
             raise HTTPException(status_code=400,
                 detail=f"Kolom tidak ditemukan. Kolom tersedia: {df.columns.tolist()}")
     raw_series = df[request.timestamp_column].astype(str).str.strip()
-    parsed = pd.to_datetime(raw_series, format="%H:%M:%S", errors="coerce")
+    parsed = _datetime_data(df, request.timestamp_column,request.date_column)
     if parsed.notna().sum() < 2:
-        parsed = pd.to_datetime(raw_series, errors="coerce")
+        parsed = _datetime_data(df,request.timestamp_column,request.date_column)
     df = df.copy()
     df["time"]  = parsed
     df["state"] = pd.to_numeric(df[request.state_column], errors="coerce")

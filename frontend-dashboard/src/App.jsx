@@ -34,6 +34,7 @@ function App() {
     responsive: true,
     displaylogo: false,
   });
+  const [dateTime,setDataTime] = useState("");
   const [spValue, setSpValue] = useState("");
   const [pvValue, setPvValue] = useState("");
   const [rangeValue, setRangeValue] = useState(null);
@@ -336,6 +337,13 @@ function App() {
           allColumns[0] ??
           "";
         setTimestampColumn(autoDetectedTime);
+
+        const dateKeywords=["date","DATE","tanggal"];
+        const detectionDate =
+          allColumns.find(col=>
+            dateKeywords.some(kw=>col.toLowerCase().includes(kw))
+          ) ?? "";
+        setDataTime(detectionDate);
 
         const stateKeywords = ["auto", "manual", "mode", "status"];
         const autoDetectedState =
