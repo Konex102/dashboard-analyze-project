@@ -1,5 +1,6 @@
 // New Update
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import logo from "./assets/Sinarmas_logo.png";
 import "./App.css";
 
 const CHART_OPTIONS = [
@@ -643,7 +644,7 @@ function App() {
     <div className="dashboard-app">
       <header className="hero">
         <div className="hero-title">
-          <img className="hero-logo" src="" alt="Logo" />
+          <img className="hero-logo" src={logo} alt="Logo" />
           <h1>INTERACTIVE DASHBOARD</h1>
         </div>
 
