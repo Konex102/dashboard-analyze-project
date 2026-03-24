@@ -222,12 +222,12 @@ def _datetime_data(df:pd.DataFrame, time_col:str, date_col:str|None)->pd.Series:
     raw = df[time_col].astype(str).str.strip()
     if date_col and date_col in df.columns:
         date_raw = df[date_col].astype(str).str.strip()
-        combined = date_raw + "" + raw
-        parsed = pd.to_datetime(combined,firstDay=True,errors="coerce")
+        combined = date_raw + " " + raw
+        parsed = pd.to_datetime(combined,dayFirst=True,errors="coerce")
         if parsed.notna().sum()>=2:
             return parsed
         
-    parsed = pd.to_datetime(raw,format="%H:%M:%S",erros="coerce")
+    parsed = pd.to_datetime(raw,format="%H:%M:%S",errors="coerce")
     if parsed.notna().sum()<2:
         parsed = pd.to_datetime(raw,errors="coerce")
     return parsed
@@ -458,14 +458,12 @@ async def timestamp_calculation(request: timestampRequest):
         raise HTTPException(status_code=400,
             detail=f"Kolom '{request.timestamp_column}' tidak ada. "
                    f"Kolom tersedia: {df.columns.tolist()}")
-    raw_series = df[request.timestamp_column].astype(str).str.strip()
+    
     parsed = _datetime_data(df,request.timestamp_column,request.date_column)
+    
     if parsed.notna().sum() < 2:
-        parsed = _datetime_data(df,request.timestamp_column,request.date_column)
+        raise HTTPException(status_code=400, detailf=f"Kolom Tidak Valid")
     invalid_count = int(parsed.isna().sum())
-    if parsed.notna().sum() < 2:
-        raise HTTPException(status_code=400,
-            detail=f"Kolom '{request.timestamp_column}' tidak valid.")
     parsed = parsed.dropna().sort_values()
     start_time = parsed.iloc[0]
     end_time   = parsed.iloc[-1]
@@ -495,12 +493,8 @@ async def counting_auto_mode(request: autoCounting):
         if col not in df.columns:
             raise HTTPException(status_code=400,
                 detail=f"Kolom tidak ditemukan. Kolom tersedia: {df.columns.tolist()}")
-    raw_series = df[request.timestamp_column].astype(str).str.strip()
-    parsed = _datetime_data(df, request.timestamp_column,request.date_column)
-    if parsed.notna().sum() < 2:
-        parsed = _datetime_data(df,request.timestamp_column,request.date_column)
     df = df.copy()
-    df["time"]  = parsed
+    df["time"]  = _datetime_data(df,request.timestamp_column,request.date_column)
     df["state"] = pd.to_numeric(df[request.state_column], errors="coerce")
     df = df.dropna(subset=["time", "state"]).sort_values("time").reset_index(drop=True)
     if df.empty or len(df) < 2:
@@ -591,6 +585,6 @@ async def spv_analysis(request: SPVRequest):
         },
     }
 
-# if __name__ == "__main__":
-#     import uvicorn
-#     uvicorn.run(app, host="0.0.0.0", port=8000)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

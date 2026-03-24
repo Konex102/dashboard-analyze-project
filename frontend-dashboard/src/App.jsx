@@ -11,7 +11,7 @@ const CHART_OPTIONS = [
 ];
 
 function App() {
-  const backendUrl = "https://dashboard-analyze-project.vercel.app";
+  const backendUrl = "http://localhost:8000";
   const [uploadFile, setUploadFile] = useState([]);
   const [files, setFiles] = useState([]);
   const [selectedFile, setSelectedFile] = useState("");
@@ -34,7 +34,7 @@ function App() {
     responsive: true,
     displaylogo: false,
   });
-  const [dateTime,setDataTime] = useState("");
+  const [dateTime, setDateTime] = useState("");
   const [spValue, setSpValue] = useState("");
   const [pvValue, setPvValue] = useState("");
   const [rangeValue, setRangeValue] = useState(null);
@@ -277,6 +277,7 @@ function App() {
         setDurationResult(null);
         setAutoCountingResult(null);
         setRangeValue(null);
+        setDateTime(detectionDate);
         setDatasetInfo({}); // ← reset info
         setMessage("");
         setError("");
@@ -338,12 +339,12 @@ function App() {
           "";
         setTimestampColumn(autoDetectedTime);
 
-        const dateKeywords=["date","DATE","tanggal"];
+        const dateKeywords = ["date", "DATE", "tanggal"];
         const detectionDate =
-          allColumns.find(col=>
-            dateKeywords.some(kw=>col.toLowerCase().includes(kw))
+          allColumns.find((col) =>
+            dateKeywords.some((kw) => col.toLowerCase().includes(kw)),
           ) ?? "";
-        setDataTime(detectionDate);
+        setDateTime(detectionDate);
 
         const stateKeywords = ["auto", "manual", "mode", "status"];
         const autoDetectedState =
@@ -596,6 +597,7 @@ function App() {
         body: JSON.stringify({
           filename: selectedFile,
           timestamp_column: timestampColumn,
+          date_column: dateTime || null,
         }),
       });
       setDurationResult(payload);
@@ -630,6 +632,7 @@ function App() {
           filename: selectedFile,
           timestamp_column: timestampColumn,
           state_column: stateColumn,
+          date_column: dateTime || null,
         }),
       });
       setAutoCountingResult(payload);
