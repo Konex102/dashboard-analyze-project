@@ -75,6 +75,7 @@ class PlotRequest(BaseModel):
     title: str | None = None
     sheet_name: str | int = 0
     slider_range: bool = False
+    date_column: str | None = None  # ← for midnight rollover fix
 
 class timestampRequest(BaseModel):
     filename: str
@@ -86,7 +87,7 @@ class autoCounting(BaseModel):
     filename: str
     timestamp_column: str
     state_column: str
-    date_column : str | None = None
+    date_column: str | None = None
     sheet_name: str | int = 0
 
 class SPVRequest(BaseModel):
@@ -146,7 +147,6 @@ def _detect_file_info(file_path: str, sheet_name: str | int = 0) -> tuple[dict, 
         try:
             import openpyxl
             wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
-            # Resolve sheet
             if isinstance(sheet_name, int):
                 ws = wb.worksheets[sheet_name] if sheet_name < len(wb.worksheets) else wb.active
             else:
@@ -218,19 +218,50 @@ def _read_dataframe(file_path: str, sheet_name: str | int = 0) -> pd.DataFrame:
 
     raise HTTPException(status_code=400, detail="Unsupported file format.")
 
-def _datetime_data(df:pd.DataFrame, time_col:str, date_col:str|None)->pd.Series:
+
+def _fix_midnight_rollover(parsed: pd.Series) -> pd.Series:
+    """
+    Detect and fix midnight rollover for time-only parsed series.
+    When time goes backwards (23:59 → 00:00), increment the date offset.
+    """
+    time_only = parsed.dt.hour * 3600 + parsed.dt.minute * 60 + parsed.dt.second
+    rollover = (time_only < time_only.shift(1)).fillna(False).cumsum()
+    return parsed + pd.to_timedelta(rollover, unit="D")
+
+
+def _datetime_data(df: pd.DataFrame, time_col: str, date_col: str | None) -> pd.Series:
     raw = df[time_col].astype(str).str.strip()
+
+    # --- Case 1: Separate date column provided ---
     if date_col and date_col in df.columns:
         date_raw = df[date_col].astype(str).str.strip()
-        combined = date_raw + " " + raw
-        parsed = pd.to_datetime(combined,dayFirst=True,errors="coerce")
-        if parsed.notna().sum()>=2:
+        date_raw = date_raw.replace(r"^\s*$", pd.NA, regex=True)
+
+        # Forward-fill sparse dates (data loggers often only write date on change)
+        date_series = pd.to_datetime(date_raw, dayfirst=True, errors="coerce")
+        date_series = date_series.ffill()
+
+        combined = date_series.dt.strftime("%Y-%m-%d") + " " + raw
+        parsed = pd.to_datetime(combined, format="%Y-%m-%d %H:%M:%S", errors="coerce")
+        if parsed.notna().sum() >= 2:
             return parsed
-        
-    parsed = pd.to_datetime(raw,format="%H:%M:%S",errors="coerce")
-    if parsed.notna().sum()<2:
-        parsed = pd.to_datetime(raw,errors="coerce")
+
+    # --- Case 2: Timestamp column already has date+time ---
+    parsed = pd.to_datetime(raw, errors="coerce")
+    if parsed.notna().sum() >= 2:
+        # Check if it's truly datetime (has non-default date variation)
+        if parsed.dt.date.nunique() > 1:
+            return parsed
+        # Only one unique date — might be time-only parsed with default date, apply rollover fix
+        return _fix_midnight_rollover(parsed)
+
+    # --- Case 3: Time-only column (HH:MM:SS) → detect and fix midnight rollover ---
+    parsed = pd.to_datetime(raw, format="%H:%M:%S", errors="coerce")
+    if parsed.notna().sum() >= 2:
+        return _fix_midnight_rollover(parsed)
+
     return parsed
+
 
 def _summary_statistics(df: pd.DataFrame) -> dict | None:
     numeric_cols = df.select_dtypes(include="number").columns
@@ -258,13 +289,17 @@ def _validate_columns(df: pd.DataFrame, columns: list[str], label: str) -> None:
         raise HTTPException(status_code=400,
             detail=f"Unknown {label} column(s): {', '.join(missing)}")
 
-def _maybe_sort_datetime(df: pd.DataFrame, x_col: str | None) -> pd.DataFrame:
+def _maybe_sort_datetime(df: pd.DataFrame, x_col: str | None, date_col: str | None = None) -> pd.DataFrame:
     if not x_col:
         return df
-    parsed = pd.to_datetime(df[x_col], errors="coerce")
+
+    sorted_df = df.copy()
+
+    # Use _datetime_data so date_column + midnight rollover are both handled
+    parsed = _datetime_data(sorted_df, x_col, date_col)
     if parsed.notna().sum() == 0:
         return df
-    sorted_df = df.copy()
+
     sorted_df[x_col] = parsed
     return sorted_df.sort_values(by=x_col)
 
@@ -276,7 +311,7 @@ def _build_figure(request: PlotRequest, df: pd.DataFrame):
     _validate_columns(df, y_cols, "y")
     chart_df = df
     if request.chart_type in {"line", "area"}:
-        chart_df = _maybe_sort_datetime(chart_df, x_col)
+        chart_df = _maybe_sort_datetime(chart_df, x_col, request.date_column)
 
     if request.chart_type == "line":
         if not x_col or not y_cols:
@@ -399,11 +434,6 @@ async def upload_file(files: List[UploadFile] = File(...)):
 
 @app.get("/dataset/{filename}/info")
 async def get_dataset_info(filename: str, sheet_name: str | int = 0):
-    """
-    Returns key-value metadata rows found at the top of the file
-    before the actual data header (e.g. MILL, NAME).
-    Supports both CSV and Excel (.xlsx).
-    """
     file_path = _resolve_file_path(filename)
     info, _ = _detect_file_info(file_path, sheet_name=sheet_name)
     return {"filename": os.path.basename(filename), "info": info}
@@ -458,11 +488,11 @@ async def timestamp_calculation(request: timestampRequest):
         raise HTTPException(status_code=400,
             detail=f"Kolom '{request.timestamp_column}' tidak ada. "
                    f"Kolom tersedia: {df.columns.tolist()}")
-    
-    parsed = _datetime_data(df,request.timestamp_column,request.date_column)
-    
+
+    parsed = _datetime_data(df, request.timestamp_column, request.date_column)
+
     if parsed.notna().sum() < 2:
-        raise HTTPException(status_code=400, detailf=f"Kolom Tidak Valid")
+        raise HTTPException(status_code=400, detail="Kolom Tidak Valid")
     invalid_count = int(parsed.isna().sum())
     parsed = parsed.dropna().sort_values()
     start_time = parsed.iloc[0]
@@ -475,8 +505,8 @@ async def timestamp_calculation(request: timestampRequest):
         "timestamp_column": request.timestamp_column,
         "total_records": int(len(parsed)),
         "invalid_rows_skipped": invalid_count,
-        "start_time": start_time.strftime("%H:%M:%S"),
-        "end_time":   end_time.strftime("%H:%M:%S"),
+        "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S"),
+        "end_time":   end_time.strftime("%Y-%m-%d %H:%M:%S"),
         "total_duration": {
             "second": total_secs,
             "minutes": round(total_secs / 60, 2),
@@ -494,7 +524,7 @@ async def counting_auto_mode(request: autoCounting):
             raise HTTPException(status_code=400,
                 detail=f"Kolom tidak ditemukan. Kolom tersedia: {df.columns.tolist()}")
     df = df.copy()
-    df["time"]  = _datetime_data(df,request.timestamp_column,request.date_column)
+    df["time"]  = _datetime_data(df, request.timestamp_column, request.date_column)
     df["state"] = pd.to_numeric(df[request.state_column], errors="coerce")
     df = df.dropna(subset=["time", "state"]).sort_values("time").reset_index(drop=True)
     if df.empty or len(df) < 2:
@@ -514,8 +544,8 @@ async def counting_auto_mode(request: autoCounting):
             "segment": int(group_id),
             "state": state_val,
             "label": "Auto" if state_val == 1 else "Manual",
-            "start_time": start_time.strftime("%H:%M:%S"),
-            "end_time":   end_time.strftime("%H:%M:%S"),
+            "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "end_time":   end_time.strftime("%Y-%m-%d %H:%M:%S"),
             "duration_seconds": dur_secs,
             "duration_human": f"{h:02d}:{m:02d}:{s:02d}",
             "record_count": len(group_df),

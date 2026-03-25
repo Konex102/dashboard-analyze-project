@@ -277,8 +277,8 @@ function App() {
         setDurationResult(null);
         setAutoCountingResult(null);
         setRangeValue(null);
-        setDateTime(detectionDate);
-        setDatasetInfo({}); // ← reset info
+        setDateTime("");
+        setDatasetInfo({});
         setMessage("");
         setError("");
         return;
@@ -290,26 +290,24 @@ function App() {
       setDurationResult(null);
       setAutoCountingResult(null);
       setRangeValue(null);
-      setDatasetInfo({}); // ← reset info while loading
+      setDatasetInfo({});
       setMessage("");
       setError("");
 
       try {
-        // ── Fetch columns AND metadata in parallel ──────────────────────────
         const [colPayload, infoPayload] = await Promise.all([
           callApi(`/dataset/${encodeURIComponent(filename)}/columns`),
           callApi(`/dataset/${encodeURIComponent(filename)}/info`).catch(
             () => ({ info: {} }),
           ),
         ]);
-        // ───────────────────────────────────────────────────────────────────
 
         const allColumns = colPayload.columns ?? [];
         const numeric = colPayload.numeric_columns ?? [];
 
         setColumns(allColumns);
         setNumericColumns(numeric);
-        setDatasetInfo(infoPayload.info ?? {}); // ← store MILL / NAME / etc.
+        setDatasetInfo(infoPayload.info ?? {});
 
         setXColumn((prev) =>
           allColumns.includes(prev) ? prev : (allColumns[0] ?? ""),
@@ -339,12 +337,12 @@ function App() {
           "";
         setTimestampColumn(autoDetectedTime);
 
-        const dateKeywords = ["date", "DATE", "tanggal"];
-        const detectionDate =
+        const dateKeywords = ["date", "tanggal"];
+        const detectedDate =
           allColumns.find((col) =>
             dateKeywords.some((kw) => col.toLowerCase().includes(kw)),
           ) ?? "";
-        setDateTime(detectionDate);
+        setDateTime(detectedDate);
 
         const stateKeywords = ["auto", "manual", "mode", "status"];
         const autoDetectedState =
@@ -539,6 +537,7 @@ function App() {
   const handleChangeYColumn = (index, value) =>
     setYColumn((prev) => prev.map((col, i) => (i === index ? value : col)));
 
+  // ── FIX: now sends date_column so backend can handle midnight rollover ──
   const handlePlot = async () => {
     if (!hasDataset) {
       setError("Select a dataset first.");
@@ -558,6 +557,7 @@ function App() {
       names: namesColumn || null,
       values: valuesColumn || null,
       z: zColumn || null,
+      date_column: dateTime || null,   // ← NEW: pass date column for rollover fix
     };
     setIsPlotting(true);
     setError("");
@@ -659,7 +659,6 @@ function App() {
           <h1>INTERACTIVE DASHBOARD</h1>
         </div>
 
-        {/* ── DATASET INFO BADGES (MILL / NAME / …) ──────────────────── */}
         {datasetInfoEntries.length > 0 && (
           <div className="dataset-info-bar">
             {datasetInfoEntries.map(([key, value]) => (
@@ -670,7 +669,6 @@ function App() {
             ))}
           </div>
         )}
-        {/* ─────────────────────────────────────────────────────────────── */}
       </header>
       <main className="content-grid">
         <section className="panel data-source">
@@ -788,6 +786,29 @@ function App() {
                 </select>
               </label>
             )}
+
+            {/* ── NEW: Date column selector shown when chart type is selected ── */}
+            {showXY && (
+              <label className="field date-field">
+                Kolom Tanggal
+                <select
+                  className="input-compact"
+                  value={dateTime}
+                  onChange={(e) => {
+                    setDateTime(e.target.value);
+                    setPlotFigure(null); // reset chart so user re-plots with new date
+                  }}
+                >
+                  <option value="">(None / Time Only)</option>
+                  {columns.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {/* ────────────────────────────────────────────────────────────────── */}
 
             {showXY && (
               <div className="field y-field">
@@ -1130,10 +1151,9 @@ function App() {
             )}
             <div
               ref={rangeRef}
-              style={{ width: "100", minHeight: rangeValue ? 220 : 0 }}
+              style={{ width: "100%", minHeight: rangeValue ? 220 : 0 }}
             />
           </section>
-          {/* <section className="panel panel-empty" aria-hidden="false" /> */}
         </div>
       </main>
     </div>
