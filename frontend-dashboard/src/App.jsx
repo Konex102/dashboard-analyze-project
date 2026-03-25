@@ -787,29 +787,6 @@ function App() {
               </label>
             )}
 
-            {/* ── NEW: Date column selector shown when chart type is selected ── */}
-            {showXY && (
-              <label className="field date-field">
-                Kolom Tanggal
-                <select
-                  className="input-compact"
-                  value={dateTime}
-                  onChange={(e) => {
-                    setDateTime(e.target.value);
-                    setPlotFigure(null); // reset chart so user re-plots with new date
-                  }}
-                >
-                  <option value="">(None / Time Only)</option>
-                  {columns.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {/* ────────────────────────────────────────────────────────────────── */}
-
             {showXY && (
               <div className="field y-field">
                 <span>Nilai Y</span>
