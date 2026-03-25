@@ -10,6 +10,16 @@ const CHART_OPTIONS = [
   { label: "Scatter", value: "scatter" },
 ];
 
+const RANGE_SELECTOR_OPTIONS = {
+  buttons: [
+    { step: "month", stepmode: "backward", count: 1,  label: "1m"  },
+    { step: "month", stepmode: "backward", count: 6,  label: "6m"  },
+    { step: "year",  stepmode: "todate",   count: 1,  label: "YTD" },
+    { step: "year",  stepmode: "backward", count: 1,  label: "1y"  },
+    { step: "all" },
+  ],
+};
+
 function App() {
   const backendUrl = "http://localhost:8000";
   const [uploadFile, setUploadFile] = useState([]);
@@ -93,21 +103,6 @@ function App() {
   }, [autoCountingResult]);
 
   useEffect(() => {
-    const plotlyLib = globalThis.Plotly;
-    if (!plotlyLib || !plotRef.current) return;
-    if (!plotFigure) {
-      plotlyLib.purge(plotRef.current);
-      return;
-    }
-    plotlyLib.react(
-      plotRef.current,
-      plotFigure.data,
-      plotFigure.layout,
-      plotConfig,
-    );
-  }, [plotFigure, plotConfig]);
-
-  useEffect(() => {
     const plotly_pie = globalThis.Plotly;
     if (!plotly_pie || !pieRef.current) return;
 
@@ -160,6 +155,49 @@ function App() {
       displayModeBar: false,
     });
   }, [autoCountingSummary, autoCountingResult]);
+
+  useEffect(() => {
+    const plotlyLib = globalThis.Plotly;
+    if (!plotlyLib || !plotRef.current) return;
+    if (!plotFigure) {
+      plotlyLib.purge(plotRef.current);
+      return;
+    }
+
+    const isDateAxis = plotFigure.layout?.xaxis?.type === "date";
+    const xaxis = {
+      ...(plotFigure.layout?.xaxis ?? {}),
+      rangeslider:{
+        visible:true,
+        thickness: 0.075,
+        bgcolor: "rgba(47, 109, 246, 0.08)",
+        bordercolor: "rgba(47, 109, 246, 0.24)",
+        borderwidth: 1,
+      },
+    };
+    
+    if (isDateAxis) {
+      xaxis.rangeselector = {
+        ...RANGE_SELECTOR_OPTIONS,
+        bgcolor: "#f4f7ff",
+        activecolor: "#dbe7ff",
+        bordercolor: "rgba(47, 109, 246, 0.22)",
+        borderwidth: 1,
+        font: {
+          family: "JetBrains Mono, monospace",
+          size: 10,
+          color: "#2c2c2c",
+        },
+      };
+    }
+    
+    plotlyLib.react(
+      plotRef.current, 
+      plotFigure.data, 
+      {...plotFigure.layout,xaxis},
+      plotConfig,
+    );
+  }, [plotFigure, plotConfig]);
 
   useEffect(() => {
     const plotly_pie = globalThis.Plotly;
@@ -846,7 +884,6 @@ function App() {
               </label>
             )}
           </div>
-
           <div className="inline-actions">
             <button
               type="button"
