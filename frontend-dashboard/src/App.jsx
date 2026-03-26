@@ -44,6 +44,7 @@ function App() {
     responsive: true,
     displaylogo: false,
   });
+  const [downloadingReport,setDownloadingReport] = useState(false);
   const [dateTime, setDateTime] = useState("");
   const [spValue, setSpValue] = useState("");
   const [pvValue, setPvValue] = useState("");
@@ -184,7 +185,7 @@ function App() {
         bordercolor: "rgba(47, 109, 246, 0.22)",
         borderwidth: 1,
         font: {
-          family: "JetBrains Mono, monospace",
+          family: "Plus Jakarta Sans, Segoe UI, sans-serif",
           size: 10,
           color: "#2c2c2c",
         },
@@ -575,7 +576,6 @@ function App() {
   const handleChangeYColumn = (index, value) =>
     setYColumn((prev) => prev.map((col, i) => (i === index ? value : col)));
 
-  // ── FIX: now sends date_column so backend can handle midnight rollover ──
   const handlePlot = async () => {
     if (!hasDataset) {
       setError("Select a dataset first.");
@@ -681,6 +681,48 @@ function App() {
       setIsAutoCounting(false);
     }
   };
+
+  const handleDownload = async () => {
+  if (!selectedFile) {
+    setError("Pilih Dataset!");
+    return;
+  }
+
+  setDownloadingReport(true);
+
+  try {
+    const response = await fetch(`${backendUrl}/generate-report`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ filename: selectedFile }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to generate PDF");
+    }
+
+    const blob = await response.blob();
+
+    // 🔍 DEBUG: check size
+    console.log("PDF size:", blob.size);
+
+    const url = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "report.pdf";
+    a.click();
+
+    window.URL.revokeObjectURL(url);
+
+  } catch (err) {
+    setError("Download gagal : " + err.message);
+  } finally {
+    setDownloadingReport(false);
+  }
+};
 
   const formatNumber = (value) => {
     if (typeof value !== "number" || Number.isNaN(value)) return "-";
@@ -898,6 +940,9 @@ function App() {
               disabled={!hasDataset || isPlotting}
             >
               {isPlotting ? "Rendering..." : "Buat Plot Analisis"}
+            </button>
+            <button onClick={handleDownload}>
+              {downloadingReport?"Generate PDF...":"Download Report"}
             </button>
           </div>
         </section>

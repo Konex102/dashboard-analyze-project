@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap");
 
 /* ══════════════════════════════════════════
    DESIGN TOKENS
@@ -144,7 +144,7 @@ body {
 }
 
 .hero h1 {
-  font-family: "Syne",sans-serif;
+  font-family: "Plus Jakarta Sans","Segoe UI",sans-serif;
   font-size: clamp(1.1rem,2vw,1.65rem);
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -181,7 +181,7 @@ body {
   overflow: hidden;
   border: 1.5px solid var(--blue);
   box-shadow: none;
-  font-family: "JetBrains Mono",monospace;
+  font-family: "Plus Jakarta Sans","Segoe UI",sans-serif;
   font-size: 0.68rem;
   letter-spacing: 0.06em;
   min-width: 160px;
@@ -274,7 +274,7 @@ body {
 /* Panel heading */
 .panel h2 {
   margin: 0 auto 0.9rem;
-  font-family: "Syne",sans-serif;
+  font-family: "Plus Jakarta Sans","Segoe UI",sans-serif;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.18em;
@@ -321,7 +321,7 @@ body {
   border: none;
   background: var(--blue);
   color: #fff;
-  font-family: "JetBrains Mono",monospace;
+  font-family: "Plus Jakarta Sans","Segoe UI",sans-serif;
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -349,7 +349,7 @@ body {
 .dataset-info-row:last-child { border-bottom: none; padding-bottom: 0; }
 
 .dataset-info-row .dataset-info-key {
-  font-family: "JetBrains Mono",monospace;
+  font-family: "Plus Jakarta Sans","Segoe UI",sans-serif;
   font-size: 0.63rem;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -363,13 +363,13 @@ body {
 
 .dataset-info-row .dataset-info-sep {
   color: var(--ink-4);
-  font-family: "JetBrains Mono",monospace;
+  font-family: "Plus Jakarta Sans","Segoe UI",sans-serif;
   font-size: 0.7rem;
   flex-shrink: 0;
 }
 
 .dataset-info-row .dataset-info-value {
-  font-family: "Plus Jakarta Sans",sans-serif;
+  font-family: "Plus Jakarta Sans","Segoe UI",sans-serif;
   font-size: 0.78rem;
   font-weight: 600;
   color: var(--ink);
@@ -405,7 +405,7 @@ body {
 
 .field > span,
 .field > label {
-  font-family: "JetBrains Mono",monospace;
+  font-family: "Plus Jakarta Sans","Segoe UI",sans-serif;
   font-size: 0.65rem;
   font-weight: 600;
   letter-spacing: 0.12em;
@@ -449,7 +449,7 @@ body {
   background: var(--red-soft); color: var(--red);
   border: 1.5px solid var(--red-border);
   border-radius: var(--r-sm);
-  font-family: "JetBrains Mono",monospace;
+  font-family: "Plus Jakarta Sans","Segoe UI",sans-serif;
   font-size: 0.65rem; letter-spacing: 0.05em; text-transform: uppercase;
   cursor: pointer;
   transition: background 140ms ease,color 140ms ease;
@@ -461,7 +461,7 @@ body {
   background: transparent; color: var(--blue);
   border: 1.5px dashed var(--blue-border);
   border-radius: var(--r-sm);
-  font-family: "JetBrains Mono",monospace;
+  font-family: "Plus Jakarta Sans","Segoe UI",sans-serif;
   font-size: 0.65rem; letter-spacing: 0.07em; text-transform: uppercase;
   cursor: pointer; box-shadow: none;
   transition: background 140ms ease;
@@ -474,7 +474,7 @@ body {
 button {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
   border: none; border-radius: var(--r-pill); padding: 0 1.2rem; height: 40px;
-  font-family: "JetBrains Mono",monospace; font-size: 0.72rem; font-weight: 600;
+  font-family: "Plus Jakarta Sans","Segoe UI",sans-serif; font-size: 0.72rem; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer;
   transition: background 150ms var(--ease),border-color 150ms var(--ease),transform 120ms var(--ease);
   background: var(--blue); color: #fff; box-shadow: none; white-space: nowrap;
@@ -505,7 +505,7 @@ button.action-button {
   width: 100%; height: 42px; border-radius: var(--r-pill);
   background: var(--surface-2); color: var(--ink-2);
   border: 1.5px solid var(--blue);
-  font-family: "JetBrains Mono",monospace; font-size: 0.67rem; font-weight: 600;
+  font-family: "Plus Jakarta Sans","Segoe UI",sans-serif; font-size: 0.67rem; font-weight: 600;
   letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer;
   box-shadow: none;
   transition: background 150ms var(--ease),color 150ms var(--ease),border-color 150ms var(--ease),transform 120ms var(--ease);
@@ -529,7 +529,7 @@ button.action-button:disabled { opacity: 0.4; cursor: not-allowed; transform: no
 /* ══════════════════════════════════════════
    STATUS
 ══════════════════════════════════════════ */
-.status { padding: 0.55rem 0.9rem; border-radius: var(--r-sm); font-family: "JetBrains Mono",monospace; font-size: 0.75rem; display: flex; align-items: center; gap: 0.5rem; }
+.status { padding: 0.55rem 0.9rem; border-radius: var(--r-sm); font-family: "Plus Jakarta Sans","Segoe UI",sans-serif; font-size: 0.75rem; display: flex; align-items: center; gap: 0.5rem; }
 .status::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .status.ok    { background: var(--blue-soft); color: var(--blue); border: 1px solid var(--blue-border); }
 .status.ok::before    { background: var(--blue); box-shadow: 0 0 0 3px var(--blue-glow); animation: pulse 2.2s ease-in-out infinite; }
@@ -558,11 +558,11 @@ button.action-button:disabled { opacity: 0.4; cursor: not-allowed; transform: no
 
 .empty-state p { margin: 0; }
 
-.empty-state p:first-child { font-family: "Syne",sans-serif; font-size: 1rem; font-weight: 600; color: var(--ink-3); }
+.empty-state p:first-child { font-family: "Plus Jakarta Sans","Segoe UI",sans-serif; font-size: 1rem; font-weight: 600; color: var(--ink-3); }
 
 .empty-state::before {
   content: "╌╌╌";
-  font-family: "JetBrains Mono",monospace;
+  font-family: "Plus Jakarta Sans","Segoe UI",sans-serif;
   font-size: 1.8rem; color: var(--ink-4); letter-spacing: 0.4em; margin-bottom: 0.5rem;
 }
 
@@ -577,7 +577,7 @@ thead { position: sticky; top: 0; z-index: 1; }
 
 th {
   background: var(--blue-soft); color: var(--blue);
-  font-family: "JetBrains Mono",monospace; font-size: 0.65rem; font-weight: 600;
+  font-family: "Plus Jakarta Sans","Segoe UI",sans-serif; font-size: 0.65rem; font-weight: 600;
   letter-spacing: 0.12em; text-transform: uppercase;
   padding: 0.6rem 0.9rem; text-align: right; white-space: nowrap;
   border-bottom: 1.5px solid var(--blue-border);
@@ -591,7 +591,7 @@ td {
   color: var(--ink-2); transition: background 100ms ease;
 }
 
-td:first-child { text-align: left; font-family: "JetBrains Mono",monospace; font-size: 0.75rem; color: var(--ink); font-weight: 500; }
+td:first-child { text-align: left; font-family: "Plus Jakarta Sans","Segoe UI",sans-serif; font-size: 0.75rem; color: var(--ink); font-weight: 500; }
 
 tbody tr:hover td { background: var(--blue-soft); color: var(--ink); }
 tbody tr:last-child td { border-bottom: none; }
@@ -619,8 +619,8 @@ tbody tr:last-child td { border-bottom: none; }
 .duration-row { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; padding: 0.2rem 0; border-bottom: 1px solid var(--border); }
 .duration-row:last-child { border-bottom: none; }
 .duration-label { font-size: 0.75rem; color: var(--ink-3); white-space: nowrap; }
-.duration-value { font-family: "JetBrains Mono",monospace; font-size: 0.82rem; font-weight: 600; color: var(--ink); text-align: right; }
-.duration-pct { font-family: "JetBrains Mono",monospace; font-size: 0.73rem; font-weight: 500; color: var(--blue); margin-left: 0.3rem; }
+.duration-value { font-family: "Plus Jakarta Sans","Segoe UI",sans-serif; font-size: 0.82rem; font-weight: 600; color: var(--ink); text-align: right; }
+.duration-pct { font-family: "Plus Jakarta Sans","Segoe UI",sans-serif; font-size: 0.73rem; font-weight: 500; color: var(--blue); margin-left: 0.3rem; }
 .panel.hour-record .duration-pct,
 .panel.spv-record  .duration-pct { color: var(--red); }
 

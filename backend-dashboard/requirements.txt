@@ -4,3 +4,5 @@ uvicorn
 plotly
 openpyxl
 python-multipart
+kaleido==0.2.1
+reportlab
