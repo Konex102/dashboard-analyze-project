@@ -689,36 +689,50 @@ function App() {
   }
 
   setDownloadingReport(true);
+  setError("");
 
-  try {
-    const response = await fetch(`${backendUrl}/generate-report`, {
+  try{
+    const response=await fetch(`${backendUrl}/generate-report`,{
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ filename: selectedFile }),
+      headers: {"Content-Type":"application/json"},
+      body:JSON.stringify({
+        filename:selectedFile,
+        timestamp_column:timestampColumn||null,
+        date_column:dateTime||null,
+        state_column:stateColumn||null,
+        set_point_column:spValue||null,
+        process_value_column:pvValue||null
+      }),
     });
 
-    if (!response.ok) {
-      throw new Error("Failed to generate PDF");
+    if (!response.ok){
+      let detail = "Print PDF Gagal!";
+      try{
+        const payload = await response.json();
+        detail = payload.detail||detail;
+      }catch{}
+      throw new Error(detail);
     }
 
     const blob = await response.blob();
 
-    // 🔍 DEBUG: check size
-    console.log("PDF size:", blob.size);
+    let downloadName = "ReportAnalyzing.pdf";
+    const disposition = response.headers.get("Content-Disposition")||"";
+    const match = disposition.match(/filename="?([^";\n]+)"?/);
+    if (match?.[1]) downloadName = match[1];
 
     const url = window.URL.createObjectURL(blob);
-
     const a = document.createElement("a");
     a.href = url;
-    a.download = "report.pdf";
+    a.download = downloadName;
+    document.body.appendChild(a);
     a.click();
-
+    document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
 
+    setMessage("Report berhasil Di-download");
   } catch (err) {
-    setError("Download gagal : " + err.message);
+    setError("Download Gagal: "+err.message);
   } finally {
     setDownloadingReport(false);
   }
