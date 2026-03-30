@@ -36,6 +36,7 @@ function App() {
   const [zColumn, setZColumn] = useState("");
   const [summaryStatistics, setSummaryStatistics] = useState(null);
   const [plotFigure, setPlotFigure] = useState(null);
+  const [dayfirst,setDayFirst] = useState(true);
   const [timestampColumn, setTimestampColumn] = useState("");
   const [durationResult, setDurationResult] = useState(null);
   const [stateColumn, setStateColumn] = useState("");
@@ -636,6 +637,7 @@ function App() {
           filename: selectedFile,
           timestamp_column: timestampColumn,
           date_column: dateTime || null,
+          dayfirst : dayfirst,
         }),
       });
       setDurationResult(payload);
@@ -671,6 +673,7 @@ function App() {
           timestamp_column: timestampColumn,
           state_column: stateColumn,
           date_column: dateTime || null,
+          dayfirst : dayfirst,
         }),
       });
       setAutoCountingResult(payload);
@@ -701,7 +704,8 @@ function App() {
         date_column:dateTime||null,
         state_column:stateColumn||null,
         set_point_column:spValue||null,
-        process_value_column:pvValue||null
+        process_value_column:pvValue||null,
+        dayfirst:dayfirst,
       }),
     });
 

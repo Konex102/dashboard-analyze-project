@@ -46,6 +46,15 @@ allowed_extensions = {".csv", ".xlsx"}
 csv_fallback_encodings = ("utf-8", "utf-16", "latin-1")
 _DATE_PREFIX_RE = re.compile(r"^\s*(\d{1,4})[./-](\d{1,2})[./-](\d{1,4})(?:\D|$)")
 
+_DATE_FORMATS = [
+    "%d-%m-%Y %H:%M:%S",
+    "%d-%m-%y %H:%M:%S",
+    "%d-%m-%Y %H:%M",
+    "%d-%m-%y %H:%M",
+    "%d-%m-%Y",
+    "%d-%m-%y",
+]
+
 # Color Brand
 BRAND_BLUE      = colors.HexColor("#1A56DB")
 BRAND_BLUE_DARK = colors.HexColor("#0F3FA6")
@@ -293,6 +302,31 @@ def _prefer_dayfirst(raw: pd.Series, default: bool = True) -> bool:
         return dayfirst_votes >= monthfirst_votes
     return default
 
+def _parse_format_time(raw:pd.Series,default_dayfirst:bool=True)->pd.Series:
+    cleaned_time = raw.astype("string").str.strip().replace(r"^\s*$",pd.NA,regex=True)
+    dayfirst = _prefer_dayfirst(cleaned_time,default=default_dayfirst)
+
+    # Normalize Format
+    normalized = (
+        cleaned_time.fillna("")
+        .astype(str)
+        .str.replace(r"[./]","-",regex=True)
+        .str.replace("T","",regex=False)
+        .str.strip()
+    )
+
+    parsed = pd.Series(pd.NaT,index=raw.index)
+    if dayfirst:
+        parsed = _parse_format_time(normalized,_DATE_FORMATS)
+
+    inferred = pd.to_datetime(cleaned_time,dayfirst=dayfirst,errors="coerce",format="mixed")
+    alternate = pd.to_datetime(cleaned_time,dayfirst=not dayfirst,errors="coerce",format="mixed")
+
+    parsed = parsed.fillna(inferred)
+    return alternate if alternate.notna().sum() > parsed.notna().sum() else parsed
+
+    parsed = parsed.fillna(candidate)
+    return parsed
 
 def _parse_datetime_series(raw: pd.Series, default_dayfirst: bool = True) -> pd.Series:
     dayfirst = _prefer_dayfirst(raw, default=default_dayfirst)
@@ -329,10 +363,9 @@ def _datetime_data(df: pd.DataFrame, time_col: str, date_col: str | None) -> pd.
         date_series = _parse_datetime_series(date_raw)
         date_series = date_series.ffill()
 
-        combined = date_series.dt.strftime("%d-%m-%Y") + " " + raw
-        parsed = pd.to_datetime(combined, format="%d-%m-%Y %H:%M:%S", errors="coerce")
-        if parsed.notna().sum() >= 2:
-            return parsed
+        combined = date_series.dt.strftime("%Y-%m-%d") + " " + raw.astype(str)
+        parsed = _parse_datetime_series(combined,default_dayfirst=False)
+        return parsed
 
     # --- Case 2: Timestamp column already has date+time ---
     parsed = _parse_datetime_series(raw)
