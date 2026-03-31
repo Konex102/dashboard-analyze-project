@@ -705,7 +705,6 @@ function App() {
         state_column:stateColumn||null,
         set_point_column:spValue||null,
         process_value_column:pvValue||null,
-        dayfirst:dayfirst,
       }),
     });
 
