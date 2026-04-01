@@ -21,7 +21,8 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.utils import ImageReader
 import plotly.io as pio
 
 from reportlab.platypus import (
@@ -61,19 +62,20 @@ _DATE_FORMATS = [
 ]
 
 # COLOR PALETTE
-BRAND_BLUE      = colors.HexColor("#1A56DB")
+BRAND_BLUE      = colors.HexColor("#2563EB")
 BRAND_BLUE_DARK = colors.HexColor("#0F3FA6")
-BRAND_LIGHT     = colors.HexColor("#EBF0FF")
+BRAND_LIGHT     = colors.HexColor("#F8FAFC")
 ACCENT_GREEN    = colors.HexColor("#057A55")
 ACCENT_AMBER    = colors.HexColor("#B45309")
 ACCENT_RED      = colors.HexColor("#DC2626")
 ROW_ALT         = colors.HexColor("#F8FAFF")
-BORDER_COLOR    = colors.HexColor("#D1D9F0")
+BORDER_COLOR    = colors.HexColor("#E5E7EB")
 TEXT_DARK       = colors.HexColor("#111827")
 TEXT_MID        = colors.HexColor("#374151")
 TEXT_MUTED      = colors.HexColor("#6B7280")
 WHITE           = colors.white
 
+# PAGE SIZE
 PAGE_W, PAGE_H = A4
 MARGIN         = 1.8 * cm
 
@@ -465,7 +467,7 @@ def _build_figure(request: PlotRequest, df: pd.DataFrame):
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported chart type: {ct}")
 
-    fig.update_layout(template="plotly_white")
+    fig.update_layout(template="simple_white",font=dict(size=10,color="#111827"),margin=dict(l=10,r=10,t=30,b=10),)
     return fig
 
 # REPORT HELPER
@@ -489,6 +491,22 @@ def _plotly_to_image(fig: go.Figure, width: int = 700, height: int = 300) -> byt
     except Exception:
         return None
 
+def _pick_meta(info:dict,keys:list[str])->str|None:
+    if not info:
+        return None
+    normalized = {str(k).strip().upper():k for k in info.keys()}
+    for key in keys:
+        lookup = normalized.get(key.upper())
+        if lookup is None:
+            continue
+        value = info.get(lookup)
+        if value is None:
+            continue
+        value = str(value).strip()
+        if value:
+            return value
+        return None
+
 def _build_donut_figure(labels: list[str], values: list[float], color_map: dict[str, str]) -> go.Figure:
     fig = go.Figure(go.Pie(
         labels=labels,
@@ -508,6 +526,33 @@ def _build_donut_figure(labels: list[str], values: list[float], color_map: dict[
     )
     return fig
 
+def _resolve_logo_path(base_dir: str) -> str | None:
+    env_path = os.getenv("REPORT_LOGO_PATH", "").strip()
+    candidates: list[str] = []
+    if env_path:
+        candidates.append(env_path if os.path.isabs(env_path) else os.path.join(base_dir, env_path))
+    candidates += [
+        os.path.join(base_dir, "assets", "logo.png"),
+        os.path.join(base_dir, "assets", "logo.jpg"),
+        os.path.join(base_dir, "assets", "logo.jpeg"),
+        os.path.join(base_dir, "assets", "Sinarmas_logo.png"),
+    ]
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path
+    return None
+
+def _build_logo(path: str, max_w: float, max_h: float) -> Image | None:
+    try:
+        iw, ih = ImageReader(path).getSize()
+        if not iw or not ih:
+            return Image(path, width=max_w, height=max_h)
+        scale = min(max_w / iw, max_h / ih)
+        return Image(path, width=iw * scale, height=ih * scale)
+    except Exception:
+        return None
+
+# TEXT & FONT STYLE FOR REPORTING
 def _styles_report(page_width: float) -> dict:
     base   = getSampleStyleSheet()
     usable = page_width - 2 * MARGIN  # noqa: F841
@@ -519,22 +564,41 @@ def _styles_report(page_width: float) -> dict:
         return s
 
     return {
-        "report_title": _s(
-            "report_title", "Title",
-            fontSize=20, textColor=WHITE,
-            alignment=TA_CENTER, spaceAfter=4,
-            fontName="Helvetica-Bold",
-        ),
-        "report_subtitle": _s(
-            "report_subtitle",
-            fontSize=10, textColor=colors.HexColor("#FFFFFF"),
+                "header_title": _s(
+            "header_title",
+            fontSize=13, textColor=TEXT_DARK,
             alignment=TA_CENTER, spaceAfter=0,
-            fontName="Helvetica",
+            fontName="Helvetica-Bold", leading=16,
         ),
-        "section-title": _s(
-            "section_title",
-            fontSize=16, textColor=WHITE,
-            fontName="Helvetica-Bold", spaceAfter=0, leftIndent=6,
+        "header_website": _s(
+            "header_website",
+            fontSize=8, textColor=TEXT_MUTED,
+            alignment=TA_RIGHT, spaceAfter=0,
+            fontName="Helvetica", leading=11,
+        ),
+        "header_company": _s(
+            "header_company",
+            fontSize=10, textColor=TEXT_DARK,
+            alignment=TA_LEFT, spaceAfter=0,
+            fontName="Helvetica-Bold", leading=13,
+        ),
+        "header_address": _s(
+            "header_address",
+            fontSize=8, textColor=TEXT_MID,
+            alignment=TA_LEFT, spaceAfter=0,
+            fontName="Helvetica", leading=11,
+        ),
+        "header_kv_label": _s(
+            "header_kv_label",
+            fontSize=8, textColor=TEXT_MID,
+            alignment=TA_RIGHT, spaceAfter=0,
+            fontName="Helvetica-Bold", leading=12,
+        ),
+        "header_kv_value": _s(
+            "header_kv_value",
+            fontSize=8, textColor=TEXT_DARK,
+            alignment=TA_LEFT, spaceAfter=0,
+            fontName="Helvetica", leading=12,
         ),
         "body":         _s("body",    fontSize=11, textColor=TEXT_DARK, leading=14, spaceAfter=4),
         "label":        _s("label",   fontSize=8,  textColor=TEXT_MUTED, fontName="Helvetica", spaceAfter=0),
@@ -550,8 +614,13 @@ def _styles_report(page_width: float) -> dict:
         "footer":  _s("footer",  fontSize=8, textColor=TEXT_MUTED, alignment=TA_CENTER),
         "no_data": _s("no_data", fontSize=9, textColor=TEXT_MUTED, alignment=TA_CENTER,
                        spaceAfter=6, fontName="Helvetica"),
+        "section-title":_s(
+            "section-title",fontSize=10,
+            textColor=WHITE,fontName="Helvetica-Bold",
+            alignment=TA_LEFT,leading=12),
     }
 
+# SECTION HEADER
 def _section_header(title: str, styles: dict) -> list:
     tbl = Table(
         [[Paragraph(title, styles["section-title"])]],
@@ -583,6 +652,7 @@ def _kv_table(rows: list[tuple[str, str]], styles: dict, col_widths=None) -> Tab
     ]))
     return tbl
 
+# TABLE CONTENT DATASET
 def _stat_table(stats: dict, styles: dict) -> Table:
     usable  = PAGE_W - 2 * MARGIN
     headers = ["Column", "Mean", "Median", "Min", "Max", "Std Dev"]
@@ -599,7 +669,7 @@ def _stat_table(stats: dict, styles: dict) -> Table:
         ])
     tbl = Table(data, colWidths=col_w, repeatRows=1)
     tbl.setStyle(TableStyle([
-        ("BACKGROUND",     (0, 0), (-1, 0),  BRAND_BLUE_DARK),
+        ("BACKGROUND",     (0, 0), (-1, 0),  colors.HexColor("#F1F5F9")),
         ("TOPPADDING",     (0, 0), (-1, 0),  7),
         ("BOTTOMPADDING",  (0, 0), (-1, 0),  7),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, ROW_ALT]),
@@ -647,13 +717,14 @@ def _segment_table(segments: list[dict], styles: dict) -> Table:
     ]))
     return tbl
 
+# LAYOUT FOR REPORTING
 def _metric_cards(cards: list[dict], styles: dict) -> Table:
     usable = PAGE_W - 2 * MARGIN
     cell_w = usable / len(cards)
 
     def _card(card: dict):
         ls = ParagraphStyle("mc_l", fontSize=7.5, textColor=TEXT_MUTED, fontName="Helvetica")
-        vs = ParagraphStyle("mc_v", fontSize=14,  textColor=TEXT_DARK,  fontName="Helvetica")
+        vs = ParagraphStyle("mc_v", fontSize=16,  textColor=BRAND_BLUE,  fontName="Helvetica-Bold")
         ss = ParagraphStyle("mc_s", fontSize=7.5, textColor=TEXT_MUTED, fontName="Helvetica")
         inner = [[Paragraph(card["label"], ls)], [Paragraph(card["value"], vs)]]
         if card.get("sub"):
@@ -670,7 +741,7 @@ def _metric_cards(cards: list[dict], styles: dict) -> Table:
     outer = Table([[_card(c) for c in cards]], colWidths=[cell_w] * len(cards))
     outer.setStyle(TableStyle([
         ("BACKGROUND",    (0, 0), (-1, -1), WHITE),
-        ("BOX",           (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+        ("BOX",           (0, 0), (-1, -1), 0.8, BORDER_COLOR),
         ("INNERGRID",     (0, 0), (-1, -1), 0.5, BORDER_COLOR),
         ("TOPPADDING",    (0, 0), (-1, -1), 8),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
@@ -690,30 +761,139 @@ def _build_pdf(request: ReportRequest, out_path: str) -> str:
     meta         = _load_metadata()
     display_name = meta.get(request.filename, {}).get("original_filename", request.filename)
     stats        = _summary_statistics(df)
+    subject_name = _pick_meta(
+        file_info,["AUTOMATION_NAME","DATASET_NAME","DATASET","NAME"],
+    )
+    mill_unit = _pick_meta(file_info,["MILL UNIT","UNIT_MILL","MILL","UNIT_MILL"])
+    
+    if not subject_name:
+        subject_name = os.path.splitext(display_name)[0] or display_name
+    subtitle_subject = " ".join([part for part in [subject_name, mill_unit] if part])
+    subtitle_line = f"Report Analisis pada {subtitle_subject}".strip()
 
     styles = _styles_report(PAGE_W)
     story  = []
     usable = PAGE_W - 2 * MARGIN
 
-    # COVER PDF SETUP
-    cover_data = [
-        [Paragraph("INTERACTIVE DASHBOARD", styles["report_title"])],
-        [Paragraph("Analysis Report",        styles["report_subtitle"])],
-        [Paragraph(
-            f'Generated: {_dt.now().strftime("%d %B %Y  %H:%M")}  |  File: {display_name}',
-            styles["report_subtitle"],
-        )],
-    ]
-    cover_tbl = Table(cover_data, colWidths=[usable])
-    cover_tbl.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, -1), BRAND_BLUE_DARK),
-        ("TOPPADDING",    (0, 0), (-1, -1), 14),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 14),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 14),
-        ("ROUNDEDCORNERS", [6]),
+    # HEADER LAYOUT REPORT
+    _base_dir = os.path.dirname(os.path.abspath(__file__))
+    logo_path = _resolve_logo_path(_base_dir)
+    logo = _build_logo(logo_path, max_w=3.0 * cm, max_h=1.3 * cm) if logo_path else None
+    if logo:
+        logo.hAlign = "LEFT"
+    
+    # Layout Row 1
+    col_logo = logo if logo else Paragraph("",styles["body"])
+    col_title = Paragraph("Analisis Report",styles["header_title"])
+
+    layout_1 = Table(
+        [[col_logo,col_title]],
+        colWidths=[usable*0.20,usable*0.50,usable*0.30],
+    )
+    layout_1.setStyle(TableStyle([
+        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+        ("LEFTPADDING",(0,0),(-1,-1),0),
+        ("RIGHTPADDING",(0,0),(-1,-1),0),
+        ("TOPPADDING",(0,0),(-1,-1),6),
+        ("BOTTOMPADDING",(0,0),(-1,-1),6),
     ]))
-    story.append(cover_tbl)
+
+    # Divider for Header
+    divider = HRFlowable(
+        width=usable,thickness=0.5,
+        color=BORDER_COLOR,spaceAfter=0,spaceBefore=0,
+    )
+
+    # Layout 2
+    addr_items = [
+        Paragraph(subject_name or display_name,styles["header_company"]),
+    ]
+    if mill_unit:
+        addr_items.append(Paragraph(f"Mill Unit : {mill_unit}",styles["header_address"]))
+    addr_items.append(Paragraph(display_name,styles["header_address"]))
+
+    addr_inner = Table(
+        [[item] for item in addr_items],
+        colWidths=[usable*0.50],
+    )
+    addr_inner.setStyle(TableStyle([
+        ("TOPPADDING",    (0, 0), (-1, -1), 1),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+    ]))
+
+    # Detailing in Right Cell
+    gen_str = _dt.now().strftime("%H:%M:%S, %d-%m-%Y")
+    recorded_str = "-"
+    if request.timestamp_column and request.timestamp_column in df.columns:
+        try:
+            _p = _datetime_data(
+                df, request.timestamp_column, request.date_column
+            ).dropna().sort_values()
+            if len(_p)>=2:
+                recorded_str = (
+                    f"{_p.iloc[0].strftime("%d %b %Y %H:%M")}"
+                    f"- {_p.iloc[-1].strftime("%d %b %Y %H:%M")}"
+                )
+        except Exception:
+            pass
+    
+    detail_rows = [
+        ("Generated date & time : ",gen_str),
+        ("Data Recorded Range : ",recorded_str),
+    ]
+    if mill_unit:
+        detail_rows.insert(0,("Mill Unit : ",mill_unit))
+    
+    detail_data=[
+        [
+            Paragraph(lbl,styles["header_kv_label"]),
+            Paragraph(val,styles["header_kv_value"]),
+        ]
+        for lbl,val in detail_rows
+    ]
+
+    detail_inner = Table(
+        detail_data,
+        colWidths = [usable*0.22,usable*0.28],
+    )
+    detail_inner.setStyle(TableStyle([
+        ("TOPPADDING",(0,0),(-1,-1),1),
+        ("BOTTOMPADDING",(0,0),(-1,-1),1),
+        ("LEFTPADDING",(0,0),(-1,-1),2),
+        ("RIGHTPADDING",(0,0),(-1,-1),0),
+        ("ALIGN",(0,0),(0,-1),"RIGHT"),
+        ("ALIGN",(1,0),(1,-1),"LEFT"),
+    ]))
+
+    layout_2 = Table(
+        [[addr_inner,detail_inner]],
+        colWidths=[usable*0.50,usable*0.50],
+    )
+    layout_2.setStyle(TableStyle([
+        ("VALIGN",(0,0),(-1,-1),"TOP"),
+        ("LEFTPADDING",(0,0),(-1,-1),0),
+        ("RIGHTPADDING",(0,0),(-1,-1),0),
+        ("TOPPADDING",(0,0),(-1,-1),8),
+        ("BOTTOMPADDING",(0,0),(-1,-1),8),
+    ]))
+
+    # Outer Wrapper
+    header_wrapper = Table(
+        [[layout_1],[divider],[layout_2]],
+        colWidths=[usable],
+    )
+    header_wrapper.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,-1), WHITE),
+        ("LINEBELOW",(0,-1),(-1,-1),1.5, BRAND_BLUE),
+        ("LEFTPADDING",(0,0),(-1,-1),8),
+        ("RIGHTPADDING",(0,0),(-1,-1),8),
+        ("TOPPADDING",(0,0),(-1,-1),0),
+        ("BOTTOMPADDING",(0,0),(-1,-1),0),
+        ("BOX",(0,0),(-1,-1),0.4,BORDER_COLOR),
+    ]))
+    story.append(header_wrapper)
     story.append(Spacer(1, 14))
 
     # DATASET INFO SETUP
@@ -732,7 +912,7 @@ def _build_pdf(request: ReportRequest, out_path: str) -> str:
         story.append(_stat_table(stats, styles))
     else:
         story.append(Paragraph("Kolom Angka tidak ada di Dataset", styles["no_data"]))
-    story.append(Spacer(1, 18))
+    story.append(Spacer(1, 10))
 
     # HOUR RECORD SETUP
     story += _section_header("HOUR RECORD", styles)
@@ -838,6 +1018,7 @@ def _build_pdf(request: ReportRequest, out_path: str) -> str:
             if cr["manual_seconds"] > 0: dl.append("Manual"); dv.append(cr["manual_seconds"]); dc["Manual"] = "#DC2626"
             img_bytes = _plotly_to_image(_build_donut_figure(dl, dv, dc), width=500, height=260)
             if img_bytes:
+                # CHART SETUP FOR REPORT
                 img = Image(io.BytesIO(img_bytes), width=12 * cm, height=6.5 * cm)
                 img.hAlign = "CENTER"
                 story.append(img)
@@ -936,10 +1117,12 @@ def _build_pdf(request: ReportRequest, out_path: str) -> str:
     story.append(Spacer(1, 20))
 
     # FOOTER SETUP
-    story.append(HRFlowable(width=usable, thickness=0.5, color=BORDER_COLOR))
+    story.append(HRFlowable(width=usable, thickness=0.3, color=BORDER_COLOR))
     story.append(Spacer(1, 4))
+    fmt = _dt.now().strftime("%d %b %Y %H:%M")
+    _footer_dt = _dt.now().strftime("%d %b %Y %H:%M")
     story.append(Paragraph(
-        f"Generated by Interactive Dashboard  •  {_dt.now().strftime('%d %B %Y %H:%M')}  •  {display_name}",
+        f"{display_name} Generated {_footer_dt}",
         styles["footer"],
     ))
 
