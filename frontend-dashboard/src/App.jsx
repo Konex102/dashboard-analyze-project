@@ -756,7 +756,9 @@ function App() {
       <header className="hero">
         <div className="hero-title">
           <img className="hero-logo" src={logo} alt="Sinarmas Logo" />
-          <h1>Interactive Dashboard</h1>
+          <div className="hero-copy">
+            <h1>Interactive Dashboard</h1>
+          </div>
         </div>
         {datasetInfoEntries.length > 0 && (
           <div className="dataset-info-bar">
@@ -786,7 +788,7 @@ function App() {
               disabled={isUploading || !uploadFile.length}>
               {isUploading ? "Uploading…" : "Upload"}
             </button>
-            <button type="button" className="action-button ghost"
+            <button type="button" className="action-button danger"
               onClick={handleDeleteFile} disabled={!hasDataset || isDeleting}>
               {isDeleting ? "Deleting…" : "Delete"}
             </button>
@@ -1253,6 +1255,5 @@ function App() {
     </div>
   );
 }
-
 
 export default App;

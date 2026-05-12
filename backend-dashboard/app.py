@@ -563,10 +563,15 @@ def _resolve_logo_path(base_dir: str) -> str | None:
     if env_path:
         candidates.append(env_path if os.path.isabs(env_path) else os.path.join(base_dir, env_path))
     candidates += [
+        os.path.join(base_dir, "Sinarmas_logo.png"),
+        os.path.join(base_dir, "logo.png"),
+        os.path.join(base_dir, "logo.jpg"),
+        os.path.join(base_dir, "logo.jpeg"),
         os.path.join(base_dir, "assets", "logo.png"),
         os.path.join(base_dir, "assets", "logo.jpg"),
         os.path.join(base_dir, "assets", "logo.jpeg"),
         os.path.join(base_dir, "assets", "Sinarmas_logo.png"),
+        os.path.join(os.path.dirname(base_dir), "frontend-dashboard", "src", "assets", "Sinarmas_logo.png"),
     ]
     for path in candidates:
         if path and os.path.exists(path):

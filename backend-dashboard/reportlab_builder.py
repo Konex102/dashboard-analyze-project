@@ -112,7 +112,7 @@ S = {
     "metric_v_g" : _ps("metric_v_g",fontName="Helvetica-Bold", fontSize=15,
                         textColor=GREEN,    leading=17, alignment=TA_CENTER),
     "metric_v_a" : _ps("metric_v_a",fontName="Helvetica-Bold", fontSize=15,
-                        textColor=AMBER,    leading=17, alignment=TA_CENTER),
+                        textColor=NAVY,    leading=17, alignment=TA_CENTER),
     "metric_l"   : _ps("metric_l",  fontName="Helvetica-Bold", fontSize=6.5,
                         textColor=GREY_MID, leading=9,  alignment=TA_CENTER),
     "metric_s"   : _ps("metric_s",  fontSize=7, textColor=GREY_MID,
@@ -535,30 +535,6 @@ def _build_cover(
 ) -> list:
     story : list = []
     di = dataset_info or {}
-
-    # ── Top strip: Logo only (meta info moved below title) ───────────────────
-    logo_cell : list = []
-    if logo_path and os.path.exists(logo_path):
-        try:
-            logo_cell.append(
-                Image(logo_path, width=3.8 * cm, height=1.3 * cm, kind="proportional")
-            )
-        except Exception:
-            pass
-
-    top_t = Table(
-        [[logo_cell, []]],
-        colWidths=[UW * 0.40, UW * 0.60],
-    )
-    top_t.setStyle(TableStyle([
-        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ("TOPPADDING",    (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-    ]))
-    story.append(top_t)
-    story.append(_sp(4))
 
     # ── Main title ────────────────────────────────────────────────────────────
     def _pick_di(*keys):
