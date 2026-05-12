@@ -1129,6 +1129,6 @@ async def report_job_download(job_id: str):
 async def generate_report_v2(request: ReportRequest):
     return await generate_report_sync(request)
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run(app, host="0.0.0.0", port=8000)

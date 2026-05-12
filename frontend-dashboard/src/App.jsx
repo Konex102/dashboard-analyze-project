@@ -19,7 +19,7 @@ const RANGE_SELECTOR_OPTIONS = {
 
 // Main App Function
 function App() {
-  const backendUrl = "http://localhost:8000";
+  const backendUrl = "https://dashboard-analyze-project.vercel.app";
 
   // File/Dataset State
   const [uploadFile,      setUploadFile]      = useState([]);
