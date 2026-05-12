@@ -4,7 +4,7 @@ uvicorn[standard]
 plotly
 openpyxl
 python-multipart
-kaleido
+matplotlib>=3.7.0
 jinja2
 weasyprint
 reportlab
