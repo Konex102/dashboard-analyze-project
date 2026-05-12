@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse, FileResponse
 from pydantic import BaseModel
 
+from reportlab_builder import build_pdf_reportlab
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
@@ -61,12 +62,12 @@ _DATE_FORMATS = [
     "%d-%m-%y",
 ]
 
-# COLOR PALETTE
+# Color Palette For Chart
 BRAND_BLUE      = colors.HexColor("#2563EB")
 BRAND_BLUE_DARK = colors.HexColor("#0F3FA6")
 BRAND_LIGHT     = colors.HexColor("#F8FAFC")
 ACCENT_GREEN    = colors.HexColor("#057A55")
-ACCENT_AMBER    = colors.HexColor("#B45309")
+ACCENT_NAVY    = colors.HexColor("#B45309")
 ACCENT_RED      = colors.HexColor("#DC2626")
 ROW_ALT         = colors.HexColor("#F8FAFF")
 BORDER_COLOR    = colors.HexColor("#E5E7EB")
@@ -116,7 +117,7 @@ def _load_jobs() -> dict:
             return json.load(fh)
     except Exception:
         return {}
-    
+
 def _save_jobs(jobs: dict) -> None:
     tmp = f"{jobs_path}.tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
@@ -132,6 +133,7 @@ def _set_job(job_id: str, status: str, detail: str = "", filename: str = "") -> 
 class AnalyzeRequest(BaseModel):
     filename: str
     sheet_name: str | int = 0
+
 class PlotRequest(BaseModel):
     filename: str
     chart_type: Literal["line", "bar", "area", "scatter", "heatmap", "box"] = "line"
@@ -160,10 +162,27 @@ class autoCounting(BaseModel):
     date_column: str | None = None
     sheet_name: str | int = 0
 
+class PlotConfig(BaseModel):
+    chart_type: Literal[
+        "line", "bar", "area", "scatter"] = "line"
+    x : str | None = None
+    y : str | list[str] | None = None
+    title : str | None = None
+    date_column : str | None = None
+class SPVPair(BaseModel):
+    set_point_column: str
+    process_value_column: str
+    label: str | None = None
+
 class SPVRequest(BaseModel):
     filename: str
     set_point_column: str
     process_value_column: str
+    sheet_name: str | int = 0
+
+class MultiSPVRequest(BaseModel):
+    filename: str
+    pairs: list[SPVPair]
     sheet_name: str | int = 0
 
 class ReportRequest(BaseModel):
@@ -174,9 +193,13 @@ class ReportRequest(BaseModel):
     state_column: str | None = None
     set_point_column: str | None = None
     process_value_column: str | None = None
+    spv_pairs: list[SPVPair] | None = None
+    plot_configs : list[PlotConfig] | None = None
+    stat_columns : list[str] | None = None
 
-# File Helper
+# File Helpers and Data Loading
 META_KEY_RE  = re.compile(r"^[A-Z][A-Z0-9_]{0,29}$")
+META_GROUP_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 _\-]{0,49}$")
 CSV_ENCODING = ("utf-8", "utf-16", "latin-1")
 
 def _sanitize_storage_name(filename: str) -> str:
@@ -228,8 +251,15 @@ def _detect_content(content: str, delimiter: str) -> tuple[dict, int]:
             break
         parts     = line.split(delimiter)
         non_empty = [p.strip() for p in parts if p.strip()]
+        
+        # EXISTING METADATA HELPER
         if len(non_empty) == 2 and META_KEY_RE.match(non_empty[0]):
             info[non_empty[0]] = non_empty[1]
+            skip += 1
+        
+        # NEW METADATA HELPER
+        elif len(non_empty) == 1 and META_GROUP_RE.match(non_empty[0]):
+            info.setdefault("GROUP",non_empty[0])
             skip += 1
         else:
             break
@@ -268,8 +298,49 @@ def _detect_file_info(file_path: str, sheet_name: str | int = 0) -> tuple[dict, 
             return {}, 0
     return {}, 0
 
+def _detect_multi_header(content:str,delimiter:str,skip:int) -> int:
+    lines = [l for l in content.split("\n") if l.strip()]
+    data_lines = lines[skip:]
+    if len(data_lines)<2:
+        return 1
+    
+    first_count = len(data_lines[0].split(delimiter))
+
+    # Checking Rows for new formatting
+    multi = 0
+    for row in data_lines[1:4]:
+        parts =  row.split(delimiter)
+        if parts[0].strip() == "":
+            multi += 1
+        else:
+            break
+    return 1 + multi
+
+def _flatten_multi_headers(df:pd.DataFrame)->pd.DataFrame:
+    if not isinstance(df.columns,pd.MultiIndex):
+        return df
+    
+    new_cols=[]
+    for col_tuple in df.columns:
+        parts = [str(c).strip() for c in col_tuple if str(c).strip() not in ("","nan")]
+        new_cols.append("-".join(parts) if parts else "col")
+
+    # Deduplicate suffix
+    seen : dict[str,int] = {}
+    final = []
+    for name in new_cols:
+        if name in seen:
+            seen[name]+=1
+            final.append(f"{name}_{seen[name]}")
+        else:
+            seen[name]=0
+            final.append(name)
+    df.columns = final
+    return df
+
 def _read_dataframe(file_path: str, sheet_name: str | int = 0) -> pd.DataFrame:
     _, ext = os.path.splitext(file_path.lower())
+
     if ext == ".csv":
         content = None
         for enc in CSV_ENCODING:
@@ -280,19 +351,28 @@ def _read_dataframe(file_path: str, sheet_name: str | int = 0) -> pd.DataFrame:
                 continue
         if content is None:
             raise HTTPException(status_code=400, detail="Format CSV tidak didukung")
+        
         delimiter = _sniff_delimiter(content)
         _, skip   = _detect_content(content, delimiter)
-        decimal   = _sniff_decimal(content, delimiter, skip)
+        n_headers = _detect_multi_header(content,delimiter,skip)
+        decimal   = _sniff_decimal(content, delimiter, skip + n_headers)
+
+        header_arg = list(range(n_headers)) if n_headers > 1 else 0
+
         df = pd.read_csv(
             io.StringIO(content),
             sep=delimiter,
             decimal=decimal,
             skiprows=skip if skip else None,
+            header=header_arg,
             engine="python",
         )
+
+        df = _flatten_multi_headers(df)
         df = df.dropna(axis=1, how="all")
         df = df.loc[:, ~df.columns.astype(str).str.match(r"^Unnamed:\d+$")]
         return df
+    
     if ext == ".xlsx":
         try:
             _, skip = _detect_file_info(file_path, sheet_name=sheet_name)
@@ -307,7 +387,8 @@ def _read_dataframe(file_path: str, sheet_name: str | int = 0) -> pd.DataFrame:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     raise HTTPException(status_code=400, detail="File Tidak Support")
 
-# DATETIME HELPER FUNCTION
+
+# ─── DATETIME HELPER ─────────────────────────────────────────────────────────
 def _prefer_dayfirst(raw: pd.Series, default: bool = True) -> bool:
     samples = raw.dropna().astype(str).str.strip()
     if samples.empty:
@@ -332,22 +413,19 @@ def _prefer_dayfirst(raw: pd.Series, default: bool = True) -> bool:
 def _parse_format_time(raw: pd.Series, default_dayfirst: bool = True) -> pd.Series:
     cleaned  = raw.astype("string").str.strip().replace(r"^\s*$", pd.NA, regex=True)
     dayfirst = _prefer_dayfirst(cleaned, default=default_dayfirst)
-
     normalized = (
         cleaned.fillna("").astype(str)
         .str.replace(r"[./]", "-", regex=True)
         .str.replace("T", " ", regex=False)
         .str.strip()
     )
-
     parsed = pd.Series(pd.NaT, index=raw.index, dtype="datetime64[ns]")
     for fmt in _DATE_FORMATS:
         mask = parsed.isna()
         if not mask.any():
             break
-        candidate   = pd.to_datetime(normalized[mask], format=fmt, errors="coerce")
+        candidate    = pd.to_datetime(normalized[mask], format=fmt, errors="coerce")
         parsed[mask] = candidate
-
     inferred = pd.to_datetime(cleaned, dayfirst=dayfirst, errors="coerce", format="mixed")
     parsed   = parsed.fillna(inferred)
     return parsed
@@ -380,7 +458,8 @@ def _datetime_data(df: pd.DataFrame, time_col: str, date_col: str | None) -> pd.
         return _fix_midnight_rollover(parsed)
     return parsed
 
-# ANALYSIS DATA HELPER
+
+# ─── ANALYSIS HELPERS ────────────────────────────────────────────────────────
 def _summary_statistics(df: pd.DataFrame) -> dict | None:
     num = df.select_dtypes(include="number")
     if num.empty:
@@ -423,54 +502,25 @@ def _build_figure(request: PlotRequest, df: pd.DataFrame):
     chart_df = df
     if request.chart_type in {"line", "area"}:
         chart_df = _maybe_sort_datetime(chart_df, x_col, request.date_column)
-
     ct = request.chart_type
     if ct == "line":
         if not x_col or not y_cols:
             raise HTTPException(status_code=400, detail="Line chart requires `x` and at least one `y`.")
-        fig = px.line(chart_df, x=x_col, y=y_cols, color=request.color, title=request.title or "Line Chart")
+        fig = px.line(chart_df, x=x_col, y=y_cols, color=request.color, title=request.title)
     elif ct == "bar":
         if not x_col or not y_cols:
             raise HTTPException(status_code=400, detail="Bar chart requires `x` and at least one `y`.")
         fig = px.bar(chart_df, x=x_col, y=y_cols if len(y_cols) > 1 else y_cols[0],
                      color=request.color, title=request.title or "Bar Chart", barmode="group")
-    elif ct == "scatter":
-        if not x_col or not y_cols:
-            raise HTTPException(status_code=400, detail="Scatter chart requires `x` and at least one `y`.")
-        fig = px.scatter(chart_df, x=x_col, y=y_cols if len(y_cols) > 1 else y_cols[0],
-                         color=request.color, size=request.size, title=request.title or "Scatter Plot")
-    elif ct == "area":
-        if not x_col or not y_cols:
-            raise HTTPException(status_code=400, detail="Area chart requires `x` and at least one `y`.")
-        fig = px.area(chart_df, x=x_col, y=y_cols if len(y_cols) > 1 else y_cols[0],
-                      color=request.color, title=request.title or "Area Chart")
-    elif ct == "box":
-        if not y_cols:
-            raise HTTPException(status_code=400, detail="Box chart requires at least one `y`.")
-        fig = px.box(chart_df, x=x_col, y=y_cols if len(y_cols) > 1 else y_cols[0],
-                     color=request.color, title=request.title or "Box Plot")
-    elif ct == "heatmap":
-        if x_col and y_cols:
-            fig = px.density_heatmap(chart_df, x=x_col, y=y_cols[0], z=request.z,
-                                     title=request.title or "Heatmap", color_continuous_scale="Viridis")
-        else:
-            num_df = chart_df.select_dtypes(include="number")
-            if num_df.shape[1] < 2:
-                raise HTTPException(status_code=400,
-                    detail="Heatmap without `x`/`y` requires at least two numeric columns.")
-            corr = num_df.corr(numeric_only=True)
-            fig  = go.Figure(data=go.Heatmap(
-                z=corr.values, x=list(corr.columns), y=list(corr.index),
-                colorscale="RdBu", zmid=0,
-            ))
-            fig.update_layout(title=request.title or "Correlation Heatmap")
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported chart type: {ct}")
 
-    fig.update_layout(template="simple_white",font=dict(size=10,color="#111827"),margin=dict(l=10,r=10,t=30,b=10),)
+    fig.update_layout(template="simple_white", font=dict(size=10, color="#111827"),
+                      margin=dict(l=10, r=10, t=30, b=10))
     return fig
 
-# REPORT HELPER
+
+# ─── SHARED REPORT HELPERS ───────────────────────────────────────────────────
 def _fmt_secs(secs: float) -> str:
     h, rem = divmod(int(secs), 3600)
     m, s   = divmod(rem, 60)
@@ -491,10 +541,10 @@ def _plotly_to_image(fig: go.Figure, width: int = 700, height: int = 300) -> byt
     except Exception:
         return None
 
-def _pick_meta(info:dict,keys:list[str])->str|None:
+def _pick_meta(info: dict, keys: list[str]) -> str | None:
     if not info:
         return None
-    normalized = {str(k).strip().upper():k for k in info.keys()}
+    normalized = {str(k).strip().upper(): k for k in info.keys()}
     for key in keys:
         lookup = normalized.get(key.upper())
         if lookup is None:
@@ -505,26 +555,7 @@ def _pick_meta(info:dict,keys:list[str])->str|None:
         value = str(value).strip()
         if value:
             return value
-        return None
-
-def _build_donut_figure(labels: list[str], values: list[float], color_map: dict[str, str]) -> go.Figure:
-    fig = go.Figure(go.Pie(
-        labels=labels,
-        values=values,
-        hole=0.48,
-        marker_colors=[color_map.get(l, "#999") for l in labels],
-        textinfo="label+percent",
-        hoverinfo="label+value+percent",
-    ))
-    fig.update_layout(
-        margin=dict(t=20, b=40, l=20, r=20),
-        showlegend=True,
-        legend=dict(orientation="h", y=-0.12, font=dict(size=10)),
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        height=300,
-    )
-    return fig
+    return None
 
 def _resolve_logo_path(base_dir: str) -> str | None:
     env_path = os.getenv("REPORT_LOGO_PATH", "").strip()
@@ -542,605 +573,210 @@ def _resolve_logo_path(base_dir: str) -> str | None:
             return path
     return None
 
-def _build_logo(path: str, max_w: float, max_h: float) -> Image | None:
-    try:
-        iw, ih = ImageReader(path).getSize()
-        if not iw or not ih:
-            return Image(path, width=max_w, height=max_h)
-        scale = min(max_w / iw, max_h / ih)
-        return Image(path, width=iw * scale, height=ih * scale)
-    except Exception:
+
+# ─── SPV ANALYSIS HELPER ─────────────────────────────────────────────────────
+def _compute_spv(df: pd.DataFrame, sp_col: str, pv_col: str) -> dict | None:
+    df_s = df.copy()
+    df_s["_sp"] = pd.to_numeric(df_s[sp_col], errors="coerce")
+    df_s["_pv"] = pd.to_numeric(df_s[pv_col], errors="coerce")
+    df_s = df_s.dropna(subset=["_sp", "_pv"])
+    if df_s.empty:
         return None
-
-# TEXT & FONT STYLE FOR REPORTING
-def _styles_report(page_width: float) -> dict:
-    base   = getSampleStyleSheet()
-    usable = page_width - 2 * MARGIN  # noqa: F841
-
-    def _s(name, parent="Normal", **kw) -> ParagraphStyle:
-        s = ParagraphStyle(name, parent=base[parent])
-        for k, v in kw.items():
-            setattr(s, k, v)
-        return s
-
+    df_s["_dev"]    = df_s["_pv"] - df_s["_sp"]
+    df_s["_status"] = df_s["_dev"].apply(lambda d: "normal" if d == 0 else ("lower" if d < 0 else "higher"))
+    total    = len(df_s)
+    normal_c = int((df_s["_status"] == "normal").sum())
+    lower_c  = int((df_s["_status"] == "lower").sum())
+    higher_c = int((df_s["_status"] == "higher").sum())
+    abs_dev  = df_s["_dev"].abs()
+    pct      = lambda n: round(n / total * 100, 2) if total else 0.0  # noqa: E731
     return {
-                "header_title": _s(
-            "header_title",
-            fontSize=13, textColor=TEXT_DARK,
-            alignment=TA_CENTER, spaceAfter=0,
-            fontName="Helvetica-Bold", leading=16,
-        ),
-        "header_website": _s(
-            "header_website",
-            fontSize=8, textColor=TEXT_MUTED,
-            alignment=TA_RIGHT, spaceAfter=0,
-            fontName="Helvetica", leading=11,
-        ),
-        "header_company": _s(
-            "header_company",
-            fontSize=10, textColor=TEXT_DARK,
-            alignment=TA_LEFT, spaceAfter=0,
-            fontName="Helvetica-Bold", leading=13,
-        ),
-        "header_address": _s(
-            "header_address",
-            fontSize=8, textColor=TEXT_MID,
-            alignment=TA_LEFT, spaceAfter=0,
-            fontName="Helvetica", leading=11,
-        ),
-        "header_kv_label": _s(
-            "header_kv_label",
-            fontSize=8, textColor=TEXT_MID,
-            alignment=TA_RIGHT, spaceAfter=0,
-            fontName="Helvetica-Bold", leading=12,
-        ),
-        "header_kv_value": _s(
-            "header_kv_value",
-            fontSize=8, textColor=TEXT_DARK,
-            alignment=TA_LEFT, spaceAfter=0,
-            fontName="Helvetica", leading=12,
-        ),
-        "body":         _s("body",    fontSize=11, textColor=TEXT_DARK, leading=14, spaceAfter=4),
-        "label":        _s("label",   fontSize=8,  textColor=TEXT_MUTED, fontName="Helvetica", spaceAfter=0),
-        "value_large":  _s("value_large", fontSize=16, textColor=BRAND_BLUE_DARK, fontName="Helvetica", spaceAfter=0),
-        "kv_label":     _s("kv_label",  fontSize=9, textColor=TEXT_MUTED, fontName="Helvetica"),
-        "kv_value":     _s("kv_value",  fontSize=9, textColor=TEXT_DARK,  fontName="Helvetica"),
-        "table_header": _s("table_header", fontSize=8, textColor=WHITE,
-                            fontName="Helvetica", alignment=TA_CENTER),
-        "table_cell":   _s("table_cell",   fontSize=8, textColor=TEXT_DARK,
-                            alignment=TA_CENTER, leading=11),
-        "table_cell_left": _s("table_cell_left", fontSize=8, textColor=TEXT_DARK,
-                               alignment=TA_LEFT, leading=11),
-        "footer":  _s("footer",  fontSize=8, textColor=TEXT_MUTED, alignment=TA_CENTER),
-        "no_data": _s("no_data", fontSize=9, textColor=TEXT_MUTED, alignment=TA_CENTER,
-                       spaceAfter=6, fontName="Helvetica"),
-        "section-title":_s(
-            "section-title",fontSize=10,
-            textColor=WHITE,fontName="Helvetica-Bold",
-            alignment=TA_LEFT,leading=12),
+        "set_point_column":     sp_col,
+        "process_value_column": pv_col,
+        "total_records": total,
+        "normal_count": normal_c, "normal_pct": pct(normal_c),
+        "lower_count":  lower_c,  "lower_pct":  pct(lower_c),
+        "higher_count": higher_c, "higher_pct": pct(higher_c),
+        "avg_deviation": round(float(abs_dev.mean()), 4),
+        "max_deviation": round(float(abs_dev.max()),  4),
+        "min_deviation": round(float(abs_dev.min()),  4),
     }
 
-# SECTION HEADER
-def _section_header(title: str, styles: dict) -> list:
-    tbl = Table(
-        [[Paragraph(title, styles["section-title"])]],
-        colWidths=[PAGE_W - 2 * MARGIN],
-    )
-    tbl.setStyle(TableStyle([
-        ("BACKGROUND",     (0, 0), (-1, -1), BRAND_BLUE),
-        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [BRAND_BLUE]),
-        ("TOPPADDING",     (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING",  (0, 0), (-1, -1), 6),
-        ("LEFTPADDING",    (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING",   (0, 0), (-1, -1), 8),
-        ("ROUNDEDCORNERS", [4]),
-    ]))
-    return [tbl, Spacer(1, 6)]
-
-def _kv_table(rows: list[tuple[str, str]], styles: dict, col_widths=None) -> Table:
-    usable     = PAGE_W - 2 * MARGIN
-    col_widths = col_widths or [usable * 0.42, usable * 0.58]
-    data = [[Paragraph(k, styles["kv_label"]), Paragraph(str(v), styles["kv_value"])] for k, v in rows]
-    tbl  = Table(data, colWidths=col_widths)
-    tbl.setStyle(TableStyle([
-        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [WHITE, ROW_ALT]),
-        ("GRID",           (0, 0), (-1, -1), 0.4, BORDER_COLOR),
-        ("TOPPADDING",     (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING",  (0, 0), (-1, -1), 5),
-        ("LEFTPADDING",    (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING",   (0, 0), (-1, -1), 8),
-    ]))
-    return tbl
-
-# TABLE CONTENT DATASET
-def _stat_table(stats: dict, styles: dict) -> Table:
-    usable  = PAGE_W - 2 * MARGIN
-    headers = ["Column", "Mean", "Median", "Min", "Max", "Std Dev"]
-    col_w   = [usable * 0.28] + [usable * 0.144] * 5
-    data    = [[Paragraph(h, styles["table_header"]) for h in headers]]
-    for col in stats["mean"]:
-        data.append([
-            Paragraph(col, styles["table_cell_left"]),
-            Paragraph(_fmt_num(stats["mean"].get(col)),   styles["table_cell"]),
-            Paragraph(_fmt_num(stats["median"].get(col)), styles["table_cell"]),
-            Paragraph(_fmt_num(stats["min"].get(col)),    styles["table_cell"]),
-            Paragraph(_fmt_num(stats["max"].get(col)),    styles["table_cell"]),
-            Paragraph(_fmt_num(stats["std"].get(col)),    styles["table_cell"]),
-        ])
-    tbl = Table(data, colWidths=col_w, repeatRows=1)
-    tbl.setStyle(TableStyle([
-        ("BACKGROUND",     (0, 0), (-1, 0),  colors.HexColor("#F1F5F9")),
-        ("TOPPADDING",     (0, 0), (-1, 0),  7),
-        ("BOTTOMPADDING",  (0, 0), (-1, 0),  7),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, ROW_ALT]),
-        ("TOPPADDING",     (0, 1), (-1, -1), 5),
-        ("BOTTOMPADDING",  (0, 1), (-1, -1), 5),
-        ("LEFTPADDING",    (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING",   (0, 0), (-1, -1), 6),
-        ("GRID",           (0, 0), (-1, -1), 0.4, BORDER_COLOR),
-        ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
-    ]))
-    return tbl
-
-def _segment_table(segments: list[dict], styles: dict) -> Table:
-    usable  = PAGE_W - 2 * MARGIN
-    headers = ["Seg", "State", "Label", "Start Time", "End Time", "Duration", "Records"]
-    col_w   = [usable * f for f in (0.06, 0.07, 0.10, 0.20, 0.20, 0.18, 0.09)]
-    data    = [[Paragraph(h, styles["table_header"]) for h in headers]]
-    for seg in segments:
-        label       = seg.get("label", "")
-        label_style = ParagraphStyle(
-            "seg_label", fontSize=8, alignment=TA_CENTER, fontName="Helvetica-Bold",
-            textColor=BRAND_BLUE if label == "Auto" else ACCENT_RED,
-        )
-        data.append([
-            Paragraph(str(seg.get("segment", "")),     styles["table_cell"]),
-            Paragraph(str(seg.get("state", "")),       styles["table_cell"]),
-            Paragraph(label,                            label_style),
-            Paragraph(seg.get("start_time", ""),       styles["table_cell"]),
-            Paragraph(seg.get("end_time", ""),         styles["table_cell"]),
-            Paragraph(seg.get("duration_human", ""),   styles["table_cell"]),
-            Paragraph(str(seg.get("record_count", "")), styles["table_cell"]),
-        ])
-    tbl = Table(data, colWidths=col_w, repeatRows=1)
-    tbl.setStyle(TableStyle([
-        ("BACKGROUND",     (0, 0), (-1, 0),  BRAND_BLUE_DARK),
-        ("TOPPADDING",     (0, 0), (-1, 0),  7),
-        ("BOTTOMPADDING",  (0, 0), (-1, 0),  7),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, ROW_ALT]),
-        ("TOPPADDING",     (0, 1), (-1, -1), 4),
-        ("BOTTOMPADDING",  (0, 1), (-1, -1), 4),
-        ("LEFTPADDING",    (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING",   (0, 0), (-1, -1), 4),
-        ("GRID",           (0, 0), (-1, -1), 0.4, BORDER_COLOR),
-        ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
-    ]))
-    return tbl
-
-# LAYOUT FOR REPORTING
-def _metric_cards(cards: list[dict], styles: dict) -> Table:
-    usable = PAGE_W - 2 * MARGIN
-    cell_w = usable / len(cards)
-
-    def _card(card: dict):
-        ls = ParagraphStyle("mc_l", fontSize=7.5, textColor=TEXT_MUTED, fontName="Helvetica")
-        vs = ParagraphStyle("mc_v", fontSize=16,  textColor=BRAND_BLUE,  fontName="Helvetica-Bold")
-        ss = ParagraphStyle("mc_s", fontSize=7.5, textColor=TEXT_MUTED, fontName="Helvetica")
-        inner = [[Paragraph(card["label"], ls)], [Paragraph(card["value"], vs)]]
-        if card.get("sub"):
-            inner.append([Paragraph(card["sub"], ss)])
-        t = Table(inner, colWidths=[cell_w - 0.6 * cm])
-        t.setStyle(TableStyle([
-            ("TOPPADDING",    (0, 0), (-1, -1), 2),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ]))
-        return t
-
-    outer = Table([[_card(c) for c in cards]], colWidths=[cell_w] * len(cards))
-    outer.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, -1), WHITE),
-        ("BOX",           (0, 0), (-1, -1), 0.8, BORDER_COLOR),
-        ("INNERGRID",     (0, 0), (-1, -1), 0.5, BORDER_COLOR),
-        ("TOPPADDING",    (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 10),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 10),
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-    ]))
-    return outer
-
-# PDF BUILDER SETUP
-def _build_pdf(request: ReportRequest, out_path: str) -> str:
+def _build_pdf_reportlab(request: ReportRequest, out_path: str) -> str:
     from datetime import datetime as _dt
 
-    file_path    = _resolve_file_path(request.filename)
-    df           = _read_dataframe(file_path, sheet_name=request.sheet_name)
+    file_path = _resolve_file_path(request.filename)
+    df = _read_dataframe(file_path,sheet_name=request.sheet_name)
     file_info, _ = _detect_file_info(file_path, sheet_name=request.sheet_name)
-    meta         = _load_metadata()
-    display_name = meta.get(request.filename, {}).get("original_filename", request.filename)
-    stats        = _summary_statistics(df)
-    subject_name = _pick_meta(
-        file_info,["AUTOMATION_NAME","DATASET_NAME","DATASET","NAME"],
+    meta = _load_metadata()
+    display_name = meta.get(request.filename,{}).get(
+        "original_filename", request.filename
     )
-    mill_unit = _pick_meta(file_info,["MILL UNIT","UNIT_MILL","MILL","UNIT_MILL"])
+
+    stat_columns = request.stat_columns
+    if stat_columns:
+        valid_cols = [c for c in stat_columns if c in df.columns]
+        missing = set(stat_columns) - set(df.columns)
+        if missing:
+            print(f"DATA NOT FOUND:{missing}")
+        stat_columns = valid_cols or None
+        
+    # Resolve SPV Pairs
+    spv_pairs_dicts: list[dict] = []
+    if request.spv_pairs:
+        for p in request.spv_pairs:
+            if p.set_point_column and p.process_value_column:
+                spv_pairs_dicts.append({
+                    "sp": p.set_point_column,
+                    "pv": p.process_value_column,
+                    "label": p.label or f"{p.set_point_column} vs {p.process_value_column}",
+                })
+    elif request.set_point_column and request.process_value_column:
+        spv_pairs_dicts.append({
+            "sp": request.set_point_column,
+            "pv": request.process_value_column,
+            "label": f"{request.set_point_column} vs {request.process_value_column}",
+        })
     
-    if not subject_name:
-        subject_name = os.path.splitext(display_name)[0] or display_name
-    subtitle_subject = " ".join([part for part in [subject_name, mill_unit] if part])
-    subtitle_line = f"Report Analisis pada {subtitle_subject}".strip()
+    # Resolve Plot Configuration
+    plot_configs_dicts: list[dict] = []
+    if request.plot_configs:
+        for pc in request.plot_configs:
+            plot_configs_dicts.append({
+                "chart_type": pc.chart_type,
+                "x": pc.x,
+                "y": pc.y or [],
+                "title": pc.title,
+                "date_column": pc.date_column or request.date_column,
+            })
 
-    styles = _styles_report(PAGE_W)
-    story  = []
-    usable = PAGE_W - 2 * MARGIN
-
-    # HEADER LAYOUT REPORT
-    _base_dir = os.path.dirname(os.path.abspath(__file__))
-    logo_path = _resolve_logo_path(_base_dir)
-    logo = _build_logo(logo_path, max_w=3.0 * cm, max_h=1.3 * cm) if logo_path else None
-    if logo:
-        logo.hAlign = "LEFT"
-    
-    # Layout Row 1
-    col_logo = logo if logo else Paragraph("",styles["body"])
-    col_title = Paragraph("Analisis Report",styles["header_title"])
-
-    layout_1 = Table(
-        [[col_logo,col_title]],
-        colWidths=[usable*0.20,usable*0.50,usable*0.30],
-    )
-    layout_1.setStyle(TableStyle([
-        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
-        ("LEFTPADDING",(0,0),(-1,-1),0),
-        ("RIGHTPADDING",(0,0),(-1,-1),0),
-        ("TOPPADDING",(0,0),(-1,-1),6),
-        ("BOTTOMPADDING",(0,0),(-1,-1),6),
-    ]))
-
-    # Divider for Header
-    divider = HRFlowable(
-        width=usable,thickness=0.5,
-        color=BORDER_COLOR,spaceAfter=0,spaceBefore=0,
-    )
-
-    # Layout 2
-    addr_items = [
-        Paragraph(subject_name or display_name,styles["header_company"]),
-    ]
-    if mill_unit:
-        addr_items.append(Paragraph(f"Mill Unit : {mill_unit}",styles["header_address"]))
-    addr_items.append(Paragraph(display_name,styles["header_address"]))
-
-    addr_inner = Table(
-        [[item] for item in addr_items],
-        colWidths=[usable*0.50],
-    )
-    addr_inner.setStyle(TableStyle([
-        ("TOPPADDING",    (0, 0), (-1, -1), 1),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-    ]))
-
-    # Detailing in Right Cell
-    gen_str = _dt.now().strftime("%H:%M:%S, %d-%m-%Y")
-    recorded_str = "-"
-    if request.timestamp_column and request.timestamp_column in df.columns:
-        try:
-            _p = _datetime_data(
-                df, request.timestamp_column, request.date_column
-            ).dropna().sort_values()
-            if len(_p)>=2:
-                recorded_str = (
-                    f"{_p.iloc[0].strftime("%d %b %Y %H:%M")}"
-                    f"- {_p.iloc[-1].strftime("%d %b %Y %H:%M")}"
-                )
-        except Exception:
-            pass
-    
-    detail_rows = [
-        ("Generated date & time : ",gen_str),
-        ("Data Recorded Range : ",recorded_str),
-    ]
-    if mill_unit:
-        detail_rows.insert(0,("Mill Unit : ",mill_unit))
-    
-    detail_data=[
-        [
-            Paragraph(lbl,styles["header_kv_label"]),
-            Paragraph(val,styles["header_kv_value"]),
-        ]
-        for lbl,val in detail_rows
-    ]
-
-    detail_inner = Table(
-        detail_data,
-        colWidths = [usable*0.22,usable*0.28],
-    )
-    detail_inner.setStyle(TableStyle([
-        ("TOPPADDING",(0,0),(-1,-1),1),
-        ("BOTTOMPADDING",(0,0),(-1,-1),1),
-        ("LEFTPADDING",(0,0),(-1,-1),2),
-        ("RIGHTPADDING",(0,0),(-1,-1),0),
-        ("ALIGN",(0,0),(0,-1),"RIGHT"),
-        ("ALIGN",(1,0),(1,-1),"LEFT"),
-    ]))
-
-    layout_2 = Table(
-        [[addr_inner,detail_inner]],
-        colWidths=[usable*0.50,usable*0.50],
-    )
-    layout_2.setStyle(TableStyle([
-        ("VALIGN",(0,0),(-1,-1),"TOP"),
-        ("LEFTPADDING",(0,0),(-1,-1),0),
-        ("RIGHTPADDING",(0,0),(-1,-1),0),
-        ("TOPPADDING",(0,0),(-1,-1),8),
-        ("BOTTOMPADDING",(0,0),(-1,-1),8),
-    ]))
-
-    # Outer Wrapper
-    header_wrapper = Table(
-        [[layout_1],[divider],[layout_2]],
-        colWidths=[usable],
-    )
-    header_wrapper.setStyle(TableStyle([
-        ("BACKGROUND",(0,0),(-1,-1), WHITE),
-        ("LINEBELOW",(0,-1),(-1,-1),1.5, BRAND_BLUE),
-        ("LEFTPADDING",(0,0),(-1,-1),8),
-        ("RIGHTPADDING",(0,0),(-1,-1),8),
-        ("TOPPADDING",(0,0),(-1,-1),0),
-        ("BOTTOMPADDING",(0,0),(-1,-1),0),
-        ("BOX",(0,0),(-1,-1),0.4,BORDER_COLOR),
-    ]))
-    story.append(header_wrapper)
-    story.append(Spacer(1, 14))
-
-    # DATASET INFO SETUP
-    if file_info:
-        story += _section_header("Informasi Dataset", styles)
-        info_rows = list(file_info.items()) + [
-            ("Total Rows",    f"{len(df):,}"),
-            ("Total Columns", str(len(df.columns))),
-        ]
-        story.append(_kv_table(info_rows, styles))
-        story.append(Spacer(1, 14))
-
-    # ── Summary Statistics ────────────────────────────────────────────────────
-    story += _section_header("SUMMARY", styles)
-    if stats:
-        story.append(_stat_table(stats, styles))
-    else:
-        story.append(Paragraph("Kolom Angka tidak ada di Dataset", styles["no_data"]))
-    story.append(Spacer(1, 10))
-
-    # HOUR RECORD SETUP
-    story += _section_header("HOUR RECORD", styles)
+    # Calculation Duration 
     duration_result = None
     if request.timestamp_column and request.timestamp_column in df.columns:
         try:
             parsed = _datetime_data(df, request.timestamp_column, request.date_column)
-            valid  = parsed.dropna().sort_values()
+            valid = parsed.dropna().sort_values()
             if len(valid) >= 2:
-                start_t    = valid.iloc[0]
-                end_t      = valid.iloc[-1]
-                total_secs = (end_t - start_t).total_seconds()
+                total_secs = (valid.iloc[-1] - valid.iloc[0]).total_seconds()
+                h, rem = divmod(int(total_secs), 3600)
+                m, s = divmod(rem, 60)
                 duration_result = {
                     "timestamp_column": request.timestamp_column,
-                    "start_time":  start_t.strftime("%d-%m-%Y %H:%M:%S"),
-                    "end_time":    end_t.strftime("%d-%m-%Y %H:%M:%S"),
-                    "total_records":   len(valid),
-                    "invalid_skipped": int(parsed.isna().sum()),
-                    "total_seconds":   total_secs,
-                    "human_readable":  _fmt_secs(total_secs),
-                    "minutes": round(total_secs / 60, 2),
-                    "hours":   round(total_secs / 3600, 4),
+                    "start_time": valid.iloc[0].strftime("%d-%m-%Y %H:%M:%S"),
+                    "end_time": valid.iloc[-1].strftime("%d-%m-%Y %H:%M:%S"),
+                    "total_records": len(valid),
+                    "invalid_rows_skipped": int(parsed.isna().sum()),
+                    "total_duration": {
+                        "second": total_secs,
+                        "minutes": round(total_secs / 60, 2),
+                        "hours": round(total_secs / 3600, 4),
+                        "human_readable": f"{h:02d}:{m:02d}:{s:02d}",
+                    },
                 }
         except Exception:
             pass
-
-    if duration_result:
-        dr = duration_result
-        story.append(_metric_cards([
-            {"label": "Total Duration (HH:MM:SS)", "value": dr["human_readable"],
-             "sub": f"{dr['hours']} hours", "color": "#1A56DB"},
-            {"label": "Total Minutes",  "value": f"{dr['minutes']:,.1f}",
-             "sub": "minutes",          "color": "#0369A1"},
-            {"label": "Valid Records",  "value": f"{dr['total_records']:,}",
-             "sub": f"skipped: {dr['invalid_skipped']}", "color": "#047857"},
-        ], styles))
-        story.append(Spacer(1, 6))
-        story.append(_kv_table([
-            ("Timestamp Column", dr["timestamp_column"]),
-            ("Start Time",       dr["start_time"]),
-            ("End Time",         dr["end_time"]),
-        ], styles))
-    else:
-        story.append(Paragraph("Tidak Waktu Tercatat di Dataset", styles["no_data"]))
-    story.append(Spacer(1, 18))
-
-    # AUTO/MANUAL RECORD
-    story += _section_header("AUTO/MANUAL RECORD", styles)
+    
+    # Calculation Auto/Manual Counting
     counting_result = None
-    if (request.timestamp_column and request.timestamp_column in df.columns
-            and request.state_column and request.state_column in df.columns):
+    if (request.timestamp_column and request.timestamp_column in df.columns and request.state_column and request.state_column in df.columns):
         try:
             df_c = df.copy()
-            df_c["_time"]  = _datetime_data(df_c, request.timestamp_column, request.date_column)
+            df_c["_time"] = _datetime_data(
+                df_c, request.timestamp_column, request.date_column
+            )
             df_c["_state"] = pd.to_numeric(df_c[request.state_column], errors="coerce")
-            df_c = df_c.dropna(subset=["_time", "_state"]).sort_values("_time").reset_index(drop=True)
-            if len(df_c) >= 2:
-                df_c["_chg"]   = df_c["_state"] != df_c["_state"].shift(1)
+            df_c = (
+                df_c.dropna(subset=["_time","_state"])
+                .sort_values("_time")
+                .reset_index(drop=True)
+            )
+            if len(df_c)>=2:
+                df_c["_chg"] = df_c["_state"]!=df_c["_state"].shift(1)
                 df_c["_group"] = df_c["_chg"].cumsum()
                 segs = []
-                for gid, gdf in df_c.groupby("_group"):
+                for grid, gdf in df_c.groupby("_group"):
                     sv = int(gdf["_state"].iloc[0])
                     st = gdf["_time"].iloc[0]
                     li = gdf.index[-1]
-                    et = df_c["_time"].iloc[li + 1] if li + 1 < len(df_c) else gdf["_time"].iloc[-1]
+                    et = (df_c["_time"].iloc[li+1] if li+1<len(df_c) else gdf["_time"].iloc[-1])
                     ds = (et - st).total_seconds()
+                    h2, r2 = divmod(int(ds),3600)
+                    m2, s2 = divmod(r2,60)
                     segs.append({
-                        "segment": int(gid), "state": sv,
-                        "label": "Auto" if sv == 1 else "Manual",
+                        "segment": int(grid),
+                        "state": sv,
+                        "label": "Auto" if sv==1 else "Manual",
                         "start_time": st.strftime("%d-%m-%Y %H:%M:%S"),
-                        "end_time":   et.strftime("%d-%m-%Y %H:%M:%S"),
-                        "duration_seconds": ds, "duration_human": _fmt_secs(ds),
+                        "end_time": et.strftime("%d-%m-%Y %H:%M:%S"),
+                        "duration_seconds": ds,
+                        "duration_human": f"{h2:02d}:{m2:02d}:{s2:02d}",
                         "record_count": len(gdf),
                     })
-                auto_s   = sum(s["duration_seconds"] for s in segs if s["state"] == 1)
-                manual_s = sum(s["duration_seconds"] for s in segs if s["state"] == 0)
-                total_s  = auto_s + manual_s
+                auto_s = sum(sg["duration_seconds"] for sg in segs if sg["state"]==1)
+                manual_s = sum(sg["duration_seconds"] for sg in segs if sg["state"]==0)
+                total_s = auto_s + manual_s
                 counting_result = {
-                    "segments":      segs,
-                    "auto_seconds":  auto_s,  "manual_seconds": manual_s, "total_seconds": total_s,
-                    "auto_human":    _fmt_secs(auto_s),
-                    "manual_human":  _fmt_secs(manual_s),
-                    "total_human":   _fmt_secs(total_s),
-                    "auto_pct":   round(auto_s   / total_s * 100, 2) if total_s else 0.0,
-                    "manual_pct": round(manual_s / total_s * 100, 2) if total_s else 0.0,
+                    "total_segments": len(segs),
+                    "segments": segs,
+                    "summary": {
+                        "total_auto_counting": {
+                            "seconds": auto_s,
+                            "human": _fmt_secs(auto_s),
+                            "percentage": round(auto_s/total_s*100, 2) if total_s else 0,
+                        },
+                        "total_manual_counting":{
+                            "seconds": manual_s,
+                            "human": _fmt_secs(manual_s),
+                            "percentage": round(manual_s/total_s*100,2) if total_s else 0,
+                        },
+                        "total_recorded": {
+                            "seconds": total_s,
+                            "human": _fmt_secs(total_s),
+                        },
+                    },
                 }
         except Exception:
             pass
+    
+    # Resolve Logo
+    _base_dir = os.path.dirname(os.path.abspath(__file__))
+    logo_path = _resolve_logo_path(_base_dir)
 
-    if counting_result:
-        cr = counting_result
-        story.append(_metric_cards([
-            {"label": "Total Recorded",    "value": cr["total_human"],  "sub": "HH:MM:SS",             "color": "#374151"},
-            {"label": "Auto Mode Total",   "value": cr["auto_human"],   "sub": f"{cr['auto_pct']}%",   "color": "#1A56DB"},
-            {"label": "Manual Mode Total", "value": cr["manual_human"], "sub": f"{cr['manual_pct']}%", "color": "#DC2626"},
-            {"label": "Total Segments",    "value": str(len(cr["segments"])), "sub": "transitions",    "color": "#B45309"},
-        ], styles))
-        story.append(Spacer(1, 8))
-
-        if cr["auto_seconds"] > 0 or cr["manual_seconds"] > 0:
-            dl, dv, dc = [], [], {}
-            if cr["auto_seconds"]   > 0: dl.append("Auto");   dv.append(cr["auto_seconds"]);   dc["Auto"]   = "#1A56DB"
-            if cr["manual_seconds"] > 0: dl.append("Manual"); dv.append(cr["manual_seconds"]); dc["Manual"] = "#DC2626"
-            img_bytes = _plotly_to_image(_build_donut_figure(dl, dv, dc), width=500, height=260)
-            if img_bytes:
-                # CHART SETUP FOR REPORT
-                img = Image(io.BytesIO(img_bytes), width=12 * cm, height=6.5 * cm)
-                img.hAlign = "CENTER"
-                story.append(img)
-                story.append(Spacer(1, 6))
-
-        story.append(Paragraph(
-            f"Segment Details (showing {min(50, len(cr['segments']))} of {len(cr['segments'])} segments)",
-            styles["label"],
-        ))
-        story.append(Spacer(1, 4))
-        story.append(_segment_table(cr["segments"][:50], styles))
-    else:
-        story.append(Paragraph("Tidak Timestamp Yang Terdeteksi untuk Auto/Manual", styles["no_data"]))
-    story.append(Spacer(1, 18))
-
-    # RANGE VALUE ANALYSIS VALUE
-    story += _section_header("Range Value Analysis", styles)
-    spv_result = None
-    if (request.set_point_column and request.set_point_column in df.columns
-            and request.process_value_column and request.process_value_column in df.columns):
-        try:
-            df_s = df.copy()
-            df_s["_sp"] = pd.to_numeric(df_s[request.set_point_column],     errors="coerce")
-            df_s["_pv"] = pd.to_numeric(df_s[request.process_value_column], errors="coerce")
-            df_s = df_s.dropna(subset=["_sp", "_pv"])
-            if not df_s.empty:
-                df_s["_dev"]    = df_s["_pv"] - df_s["_sp"]
-                df_s["_status"] = df_s["_dev"].apply(
-                    lambda d: "normal" if d == 0 else ("lower" if d < 0 else "higher"))
-                total    = len(df_s)
-                normal_c = int((df_s["_status"] == "normal").sum())
-                lower_c  = int((df_s["_status"] == "lower").sum())
-                higher_c = int((df_s["_status"] == "higher").sum())
-                abs_dev  = df_s["_dev"].abs()
-                pct      = lambda n: round(n / total * 100, 2) if total else 0.0  # noqa: E731
-                spv_result = {
-                    "set_point_column":     request.set_point_column,
-                    "process_value_column": request.process_value_column,
-                    "total_records": total,
-                    "normal_count": normal_c, "normal_pct": pct(normal_c),
-                    "lower_count":  lower_c,  "lower_pct":  pct(lower_c),
-                    "higher_count": higher_c, "higher_pct": pct(higher_c),
-                    "avg_deviation": round(float(abs_dev.mean()), 4),
-                    "max_deviation": round(float(abs_dev.max()),  4),
-                    "min_deviation": round(float(abs_dev.min()),  4),
-                }
-        except Exception:
-            pass
-
-    if spv_result:
-        sv = spv_result
-        story.append(_metric_cards([
-            {"label": "Total Records",    "value": f"{sv['total_records']:,}", "sub": "data points",          "color": "#374151"},
-            {"label": "Within Set Point", "value": f"{sv['normal_count']:,}", "sub": f"{sv['normal_pct']}%", "color": "#1A56DB"},
-            {"label": "Below Set Point",  "value": f"{sv['lower_count']:,}",  "sub": f"{sv['lower_pct']}%",  "color": "#B45309"},
-            {"label": "Above Set Point",  "value": f"{sv['higher_count']:,}", "sub": f"{sv['higher_pct']}%", "color": "#DC2626"},
-        ], styles))
-        story.append(Spacer(1, 8))
-
-        half      = usable / 2 - 0.2 * cm
-        left_tbl  = _kv_table([
-            ("Set Point Column",     sv["set_point_column"]),
-            ("Process Value Column", sv["process_value_column"]),
-        ], styles, col_widths=[half * 0.45, half * 0.55])
-        right_tbl = _kv_table([
-            ("Avg Absolute Deviation", _fmt_num(sv["avg_deviation"])),
-            ("Max Absolute Deviation", _fmt_num(sv["max_deviation"])),
-            ("Min Absolute Deviation", _fmt_num(sv["min_deviation"])),
-        ], styles, col_widths=[half * 0.55, half * 0.45])
-        two_col = Table([[left_tbl, right_tbl]], colWidths=[half + 0.2 * cm, half])
-        two_col.setStyle(TableStyle([
-            ("LEFTPADDING",  (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-            ("TOPPADDING",   (0, 0), (-1, -1), 0), ("BOTTOMPADDING",(0, 0), (-1, -1), 0),
-        ]))
-        story.append(two_col)
-        story.append(Spacer(1, 8))
-
-        di = [("Dalam SP",     sv["normal_count"], "#1A56DB"),
-              ("Lebih Rendah", sv["lower_count"],  "#F59E0B"),
-              ("Lebih Tinggi", sv["higher_count"], "#EF4444")]
-        dl = [x[0] for x in di if x[1] > 0]
-        dv = [x[1] for x in di if x[1] > 0]
-        dc = {x[0]: x[2] for x in di if x[1] > 0}
-        if dl:
-            img_bytes = _plotly_to_image(_build_donut_figure(dl, dv, dc), width=500, height=260)
-            if img_bytes:
-                img = Image(io.BytesIO(img_bytes), width=12 * cm, height=6.5 * cm)
-                img.hAlign = "CENTER"
-                story.append(img)
-    else:
-        story.append(Paragraph(
-            "No Set Point / Process Value columns selected or insufficient numeric data.",
-            styles["no_data"],
-        ))
-
-    story.append(Spacer(1, 20))
-
-    # FOOTER SETUP
-    story.append(HRFlowable(width=usable, thickness=0.3, color=BORDER_COLOR))
-    story.append(Spacer(1, 4))
-    fmt = _dt.now().strftime("%d %b %Y %H:%M")
-    _footer_dt = _dt.now().strftime("%d %b %Y %H:%M")
-    story.append(Paragraph(
-        f"{display_name} Generated {_footer_dt}",
-        styles["footer"],
-    ))
-
-    # WRITE PDF SETUP
-    doc = SimpleDocTemplate(
-        out_path,
-        pageSize=A4,
-        leftMargin=MARGIN, rightMargin=MARGIN,
-        topMargin=MARGIN,  bottomMargin=MARGIN,
-        title=f"Report Analisis – {display_name}",
-        author="USERS",
+    # Call ReportLab builder
+    pdf_bytes = build_pdf_reportlab(
+        df,
+        display_name          = display_name,
+        dataset_info          = file_info or {},
+        logo_path             = logo_path,
+        timestamp_col         = request.timestamp_column,
+        date_col              = request.date_column,
+        state_col             = request.state_column,
+        spv_pairs             = spv_pairs_dicts,
+        plot_configs          = plot_configs_dicts,
+        duration_result       = duration_result,
+        counting_result       = counting_result,
+        fn_datetime_data      = _datetime_data,
+        fn_summary_statistics = _summary_statistics,
+        fn_compute_spv        = _compute_spv,
+        stat_columns          = stat_columns,
     )
-    doc.build(story)
 
+    with open(out_path,"wb") as fh:
+        fh.write(pdf_bytes)
+    
     safe_stem = re.sub(r"[^\w\-]", "_", os.path.splitext(display_name)[0])
-    from datetime import datetime as _dt2
-    return f"report_{safe_stem}_{_dt2.now().strftime('%d%m%Y_%H%M')}.pdf"
+    return f"report_{safe_stem}_{_dt.now().strftime('%d%m%Y_%H%M')}.pdf"
 
+# Reportlab job runner (legacy, can be removed after WeasyPrint is fully adopted)
+def _run_reportlab_job(job_id: str, request: ReportRequest) -> None:
+    out_path = os.path.join(report_dir, f"{job_id}.pdf")
+    try:
+        download_name = _build_pdf_reportlab(request, out_path)
+        _set_job(job_id, status="done", filename=download_name)
+    except Exception as exc:
+        _set_job(job_id, status="error", detail=str(exc))
+
+# ─── ROUTES ──────────────────────────────────────────────────────────────────
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
@@ -1327,53 +963,73 @@ async def spv_analysis(request: SPVRequest):
         if col not in df.columns:
             raise HTTPException(status_code=400,
                 detail=f"Kolom '{col}' tidak ditemukan. Tersedia: {df.columns.tolist()}")
-    df = df.copy()
-    df["_sp"] = pd.to_numeric(df[request.set_point_column],     errors="coerce")
-    df["_pv"] = pd.to_numeric(df[request.process_value_column], errors="coerce")
-    df = df.dropna(subset=["_sp", "_pv"]).reset_index(drop=True)
-    if df.empty:
+    sv = _compute_spv(df, request.set_point_column, request.process_value_column)
+    if not sv:
         raise HTTPException(status_code=400, detail="Tidak ada nilai numerik valid pada kolom yang dipilih.")
-    df["_deviation"] = df["_pv"] - df["_sp"]
-    df["_status"]    = df["_deviation"].apply(lambda d: "normal" if d == 0 else ("lower" if d < 0 else "higher"))
-    total        = len(df)
-    normal_count = int((df["_status"] == "normal").sum())
-    lower_count  = int((df["_status"] == "lower").sum())
-    higher_count = int((df["_status"] == "higher").sum())
-    pct          = lambda n: round(n / total * 100, 2) if total else 0.0  # noqa: E731
-    abs_devs     = df["_deviation"].abs()
     return {
         "filename":             request.filename,
         "set_point_column":     request.set_point_column,
         "process_value_column": request.process_value_column,
-        "total_records":        total,
+        "total_records":        sv["total_records"],
         "summary": {
-            "normal":  {"count": normal_count,  "percentage": pct(normal_count)},
-            "lower":   {"count": lower_count,   "percentage": pct(lower_count)},
-            "higher":  {"count": higher_count,  "percentage": pct(higher_count)},
+            "normal":  {"count": sv["normal_count"],  "percentage": sv["normal_pct"]},
+            "lower":   {"count": sv["lower_count"],   "percentage": sv["lower_pct"]},
+            "higher":  {"count": sv["higher_count"],  "percentage": sv["higher_pct"]},
         },
         "statistics": {
-            "avg_deviation": round(float(abs_devs.mean()), 4),
-            "max_deviation": round(float(abs_devs.max()),  4),
-            "min_deviation": round(float(abs_devs.min()),  4),
+            "avg_deviation": sv["avg_deviation"],
+            "max_deviation": sv["max_deviation"],
+            "min_deviation": sv["min_deviation"],
         },
     }
 
-def _run_report_job(job_id: str, request: ReportRequest) -> None:
-    out_path = os.path.join(report_dir, f"{job_id}.pdf")
-    try:
-        download_name = _build_pdf(request, out_path)
-        _set_job(job_id, status="done", filename=download_name)
-    except Exception as exc:
-        _set_job(job_id, status="error", detail=str(exc))
+@app.post("/spv-analysis/multi")
+async def spv_analysis_multi(request: MultiSPVRequest):
+    file_path = _resolve_file_path(request.filename)
+    df        = _read_dataframe(file_path, sheet_name=request.sheet_name)
+    results   = []
+    for pair in request.pairs:
+        for col in [pair.set_point_column, pair.process_value_column]:
+            if col not in df.columns:
+                raise HTTPException(status_code=400,
+                    detail=f"Kolom '{col}' tidak ditemukan. Tersedia: {df.columns.tolist()}")
+        sv = _compute_spv(df, pair.set_point_column, pair.process_value_column)
+        if not sv:
+            results.append({
+                "label": pair.label or f"{pair.set_point_column} vs {pair.process_value_column}",
+                "error": "Tidak ada nilai numerik valid",
+            })
+            continue
+        results.append({
+            "label":                pair.label or f"{pair.set_point_column} vs {pair.process_value_column}",
+            "set_point_column":     pair.set_point_column,
+            "process_value_column": pair.process_value_column,
+            "total_records":        sv["total_records"],
+            "summary": {
+                "normal":  {"count": sv["normal_count"],  "percentage": sv["normal_pct"]},
+                "lower":   {"count": sv["lower_count"],   "percentage": sv["lower_pct"]},
+                "higher":  {"count": sv["higher_count"],  "percentage": sv["higher_pct"]},
+            },
+            "statistics": {
+                "avg_deviation": sv["avg_deviation"],
+                "max_deviation": sv["max_deviation"],
+                "min_deviation": sv["min_deviation"],
+            },
+        })
+    return {"filename": request.filename, "pairs": results}
 
-
-@app.post("/generate-report")
-async def generate_report_sync(request: ReportRequest):
-    out_path = os.path.join(report_dir, f"sync_{uuid.uuid4().hex[:8]}.pdf")
+# ReportLab-based endpoints (legacy, can be removed after WeasyPrint is fully adopted)
+@app.post("/generate-report/reportlab")
+async def generate_report_reportlab_sync(request: ReportRequest):
+    """
+    Synchronous ReportLab PDF endpoint.
+    Streams PDF directly; use /reportlab/async for non-blocking generation.
+    """
+    out_path = os.path.join(report_dir, f"rl_sync_{uuid.uuid4().hex[:8]}.pdf")
     try:
-        download_name = _build_pdf(request, out_path)
+        download_name = _build_pdf_reportlab(request, out_path)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail=f"ReportLab error: {exc}") from exc
 
     def _iter():
         with open(out_path, "rb") as fh:
@@ -1386,12 +1042,57 @@ async def generate_report_sync(request: ReportRequest):
         headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
     )
 
-@app.post("/generate-report/async")
-async def generate_report_async(request: ReportRequest, background_tasks: BackgroundTasks):
+@app.post("/generate-report/reportlab/async")
+async def generate_report_reportlab_async(
+    request: ReportRequest,
+    background_tasks: BackgroundTasks,
+):
+    """
+    Enqueue async ReportLab PDF job.
+    Poll /generate-report/status/{job_id} → download via /generate-report/download/{job_id}
+    """
     job_id = uuid.uuid4().hex
     _set_job(job_id, status="pending")
-    background_tasks.add_task(_run_report_job, job_id, request)
+    background_tasks.add_task(_run_reportlab_job, job_id, request)
     return {"job_id": job_id, "status": "pending"}
+
+
+# ─── REPORT ENDPOINTS (WeasyPrint — primary engine) ───────────────────────────
+@app.post("/generate-report")
+async def generate_report_sync(request: ReportRequest):
+    """
+    Generate PDF report (sync) using WeasyPrint.
+    Replaces the old ReportLab-based endpoint with identical URL so existing
+    clients require no changes.
+    """
+    out_path = os.path.join(report_dir, f"sync_{uuid.uuid4().hex[:8]}.pdf")
+    try:
+        download_name = _build_pdf_reportlab(request, out_path)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"PDF generation error: {exc}") from exc
+
+    def _iter():
+        with open(out_path, "rb") as fh:
+            yield from fh
+        os.remove(out_path)
+
+    return StreamingResponse(
+        _iter(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
+    )
+
+
+@app.post("/generate-report/async")
+async def generate_report_async(request: ReportRequest, background_tasks: BackgroundTasks):
+    """Enqueue an async PDF generation job (ReportLab)."""
+    job_id = uuid.uuid4().hex
+    _set_job(job_id, status="pending")
+    background_tasks.add_task(_run_reportlab_job, job_id, request)
+    return {"job_id": job_id, "status": "pending"}
+
 
 @app.get("/generate-report/status/{job_id}")
 async def report_job_status(job_id: str):
@@ -1400,6 +1101,7 @@ async def report_job_status(job_id: str):
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return {"job_id": job_id, **job}
+
 
 @app.get("/generate-report/download/{job_id}")
 async def report_job_download(job_id: str):
@@ -1418,6 +1120,10 @@ async def report_job_download(job_id: str):
         filename=job.get("filename", f"report_{job_id}.pdf"),
     )
 
+@app.post("/generate-report/v2")
+async def generate_report_v2(request: ReportRequest):
+    return await generate_report_sync(request)
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

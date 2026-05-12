@@ -1,3 +1,4 @@
 {
-  "python.analysis.extraPaths": ["./backend-dashboard"]
+  "python.analysis.extraPaths": ["./backend-dashboard"],
+  "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
 }

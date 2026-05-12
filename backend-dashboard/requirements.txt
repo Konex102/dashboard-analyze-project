@@ -1,8 +1,10 @@
 pandas
 fastapi
-uvicorn
+uvicorn[standard]
 plotly
 openpyxl
 python-multipart
-kaleido==0.2.1
+kaleido
+jinja2
+weasyprint
 reportlab
