@@ -1,6 +1,10 @@
+import os
+os.environ["MPLCONFIGDIR"] = "/tmp/matplotlib_cache"
+os.environ["MPLBACKEND"] = "Agg"
+os.makedirs("/tmp/matplotlib_cache",exist_ok=True)
+
 import csv as csv_module
 import json
-import os
 import re
 import shutil
 import uuid
