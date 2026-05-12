@@ -1,72 +1,105 @@
-// New Update
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import logo from "./assets/Sinarmas_logo.png";
 import "./App.css";
 
 const CHART_OPTIONS = [
-  { label: "Line", value: "line" },
-  { label: "Bar", value: "bar" },
-  { label: "Area", value: "area" },
-  { label: "Scatter", value: "scatter" },
+  { label: "Line",    value: "line"    },
+  { label: "Bar",     value: "bar"     },
 ];
 
+const RANGE_SELECTOR_OPTIONS = {
+  buttons: [
+    { step: "month", stepmode: "backward", count: 1,  label: "1m"  },
+    { step: "month", stepmode: "backward", count: 6,  label: "6m"  },
+    { step: "year",  stepmode: "todate",   count: 1,  label: "YTD" },
+    { step: "year",  stepmode: "backward", count: 1,  label: "1y"  },
+    { step: "all" },
+  ],
+};
+
+// Main App Function
 function App() {
   const backendUrl = "https://dashboard-analyze-project.vercel.app";
-  const [uploadFile, setUploadFile] = useState([]);
-  const [files, setFiles] = useState([]);
-  const [selectedFile, setSelectedFile] = useState("");
-  const [columns, setColumns] = useState([]);
-  const [numericColumns, setNumericColumns] = useState([]);
-  const [chartType, setChartType] = useState("");
-  const [xColumn, setXColumn] = useState("");
-  const [yColumn, setYColumn] = useState([""]);
-  const [sizeColumn, setSizeColumn] = useState("");
-  const [namesColumn, setNamesColumn] = useState("");
-  const [valuesColumn, setValuesColumn] = useState("");
-  const [zColumn, setZColumn] = useState("");
-  const [summaryStatistics, setSummaryStatistics] = useState(null);
-  const [plotFigure, setPlotFigure] = useState(null);
-  const [timestampColumn, setTimestampColumn] = useState("");
-  const [durationResult, setDurationResult] = useState(null);
-  const [stateColumn, setStateColumn] = useState("");
-  const [autoCountingResult, setAutoCountingResult] = useState(null);
-  const [plotConfig, setPlotConfig] = useState({
-    responsive: true,
-    displaylogo: false,
-  });
-  const [spValue, setSpValue] = useState("");
-  const [pvValue, setPvValue] = useState("");
-  const [rangeValue, setRangeValue] = useState(null);
-  const [rangeAnalyzing, setRangeAnalyzing] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isPlotting, setIsPlotting] = useState(false);
-  const [isCalculatingDuration, setIsCalculatingDuration] = useState(false);
-  const [isAutoCounting, setIsAutoCounting] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const [datasetInfo, setDatasetInfo] = useState({});
 
-  const plotRef = useRef(null);
-  const pieRef = useRef(null);
-  const rangeRef = useRef(null);
+  // File/Dataset State
+  const [uploadFile,      setUploadFile]      = useState([]);
+  const [files,           setFiles]           = useState([]);
+  const [selectedFile,    setSelectedFile]    = useState("");
+  const [columns,         setColumns]         = useState([]);
+  const [numericColumns,  setNumericColumns]  = useState([]);
+  const [datasetInfo,     setDatasetInfo]     = useState({});
+
+  // Chart Setup State
+  const [chartType,    setChartType]    = useState("");
+  const [xColumn,      setXColumn]      = useState("");
+  const [yColumn,      setYColumn]      = useState([""]);
+  const [sizeColumn,   setSizeColumn]   = useState("");
+  const [namesColumn,  setNamesColumn]  = useState("");
+  const [valuesColumn, setValuesColumn] = useState("");
+  const [zColumn,      setZColumn]      = useState("");
+  const [plotFigure,   setPlotFigure]   = useState(null);
+  const [plotConfig,   setPlotConfig]   = useState({ responsive: true, displaylogo: false });
+
+  // Analytics Data State
+  const [summaryStatistics,  setSummaryStatistics]  = useState(null);
+  const [dayfirst,           setDayFirst]            = useState(true);
+  const [timestampColumn,    setTimestampColumn]     = useState("");
+  const [dateTime,           setDateTime]            = useState("");
+  const [durationResult,     setDurationResult]      = useState(null);
+  const [stateColumn,        setStateColumn]         = useState("");
+  const [autoCountingResult, setAutoCountingResult]  = useState(null);
+  const [spValue,            setSpValue]             = useState("");
+  const [pvValue,            setPvValue]             = useState("");
+  const [rangeValue,         setRangeValue]          = useState(null);
+  const [selectionData,      setSelectionData]       = useState([]);
+  const [showFilter,         setShowFilter]          = useState(false);
+
+  // Loading State
+  const [isUploading,           setIsUploading]           = useState(false);
+  const [isAnalyzing,           setIsAnalyzing]           = useState(false);
+  const [isPlotting,            setIsPlotting]            = useState(false);
+  const [isCalculatingDuration, setIsCalculatingDuration] = useState(false);
+  const [isAutoCounting,        setIsAutoCounting]        = useState(false);
+  const [isDeleting,            setIsDeleting]            = useState(false);
+  const [rangeAnalyzing,        setRangeAnalyzing]        = useState(false);
+
+  // ── status messages ───────────────────────────────────────────────────────
+  const [message, setMessage] = useState("");
+  const [error,   setError]   = useState("");
+
+  // ── background PDF report ─────────────────────────────────────────────────
+  const [plotConfigs, setPlotConfigs] = useState([]);
+  const [spvPairs, setSpvPairs]       = useState([]); 
+  const [autoReport,  setAutoReport]  = useState({
+    status:       "idle",
+    jobId:        null,
+    downloadName: "",
+    errorMsg:     "",
+  });
+  const autoReportRef    = useRef(null);
+  const reportRequestRef = useRef(0);
+
+  // ── DOM refs ──────────────────────────────────────────────────────────────
+  const plotRef         = useRef(null);
+  const pieRef          = useRef(null);
+  const rangeRef        = useRef(null);
   const selectedFileRef = useRef("");
-  const hasDataset = Boolean(selectedFile);
-  const showXY = Boolean(chartType);
+
+  // ── derived ───────────────────────────────────────────────────────────────
+  const hasDataset  = Boolean(selectedFile);
+  const showXY      = Boolean(chartType);
   const showHeatmap = chartType === "heatmap";
 
+  // Summary Function
   const summaryRows = useMemo(() => {
     if (!summaryStatistics?.mean) return [];
     const metrics = ["mean", "median", "min", "max", "std"];
-    return Object.keys(summaryStatistics.mean).map((columnName) => {
-      const row = { column: columnName };
-      metrics.forEach((metric) => {
-        row[metric] = summaryStatistics[metric]?.[columnName];
-      });
+    return Object.keys(summaryStatistics.mean).filter((col) => selectionData.includes(col)).map((col) => {
+      const row = { column: col };
+      metrics.forEach((m) => { row[m] = summaryStatistics[m]?.[col]; });
       return row;
     });
-  }, [summaryStatistics]);
+  }, [summaryStatistics, selectionData]);
 
   const stateColumnOptions = useMemo(() => columns, [columns]);
 
@@ -74,306 +107,461 @@ function App() {
     if (!autoCountingResult) return null;
     const totalSegments =
       autoCountingResult.total_segments ??
-      autoCountingResult.segments?.length ??
-      0;
+      autoCountingResult.segments?.length ?? 0;
     const totalRecords = Array.isArray(autoCountingResult.segments)
-      ? autoCountingResult.segments.reduce(
-          (sum, s) => sum + (s.record_count ?? 0),
-          0,
-        )
+      ? autoCountingResult.segments.reduce((s, r) => s + (r.record_count ?? 0), 0)
       : 0;
     return {
       totalSegments,
       totalRecords,
-      totalAuto: autoCountingResult.summary?.total_auto_counting ?? null,
-      totalManual: autoCountingResult.summary?.total_manual_counting ?? null,
-      totalRecorded: autoCountingResult.summary?.total_recorded ?? null,
+      totalAuto:     autoCountingResult.summary?.total_auto_counting   ?? null,
+      totalManual:   autoCountingResult.summary?.total_manual_counting ?? null,
+      totalRecorded: autoCountingResult.summary?.total_recorded        ?? null,
     };
   }, [autoCountingResult]);
 
-  useEffect(() => {
-    const plotlyLib = globalThis.Plotly;
-    if (!plotlyLib || !plotRef.current) return;
-    if (!plotFigure) {
-      plotlyLib.purge(plotRef.current);
-      return;
-    }
-    plotlyLib.react(
-      plotRef.current,
-      plotFigure.data,
-      plotFigure.layout,
-      plotConfig,
-    );
-  }, [plotFigure, plotConfig]);
+  const selectedFileLabel = useMemo(() => {
+    return files.find((file) => file.filename === selectedFile)?.displayName ?? selectedFile;
+  }, [files, selectedFile]);
 
-  useEffect(() => {
-    const plotly_pie = globalThis.Plotly;
-    if (!plotly_pie || !pieRef.current) return;
+  const reportSections = useMemo(() => ([
+    {
+      label: "Dataset Overview",
+      detail: hasDataset
+        ? `${columns.length} columns detected`
+        : "Select a dataset to start building the PDF",
+      included: hasDataset,
+    },
+    {
+      label: "Summary Statistics",
+      detail: hasDataset
+        ? `${numericColumns.length} numeric columns will be summarized`
+        : "Waiting for dataset",
+      included: hasDataset,
+    },
+    {
+      label: "Hour Record",
+      detail: timestampColumn
+        ? `Uses timestamp column "${timestampColumn}"`
+        : "Choose a timestamp column",
+      included: Boolean(timestampColumn),
+    },
+    {
+      label: "Auto / Manual Totals",
+      detail: timestampColumn && stateColumn
+        ? `Combines "${timestampColumn}" with "${stateColumn}"`
+        : "Choose timestamp and state columns",
+      included: Boolean(timestampColumn && stateColumn),
+    },
+    {
+      label: "SP vs PV Analysis",
+      detail: spvPairs.length
+        ? `${spvPairs.length} pair(s) dalam report`
+        : spValue && pvValue
+        ? `Compares "${spValue}" with "${pvValue}"`
+        : "Choose set point and process value",
+      included: spvPairs.length > 0,
+    },
+    {
+      label: "Custom Charts",
+      detail: plotConfigs.length
+        ? `${plotConfigs.length} chart${plotConfigs.length > 1 ? "s" : ""} queued for the PDF`
+        : "Add charts from Chart Setup",
+      included: plotConfigs.length > 0,
+    },
+  ]), [
+    columns.length,
+    hasDataset,
+    numericColumns.length,
+    plotConfigs.length,
+    pvValue,
+    selectedFile,
+    spValue,
+    spvPairs,
+    stateColumn,
+    timestampColumn,
+  ]);
 
-    if (!autoCountingResult) {
-      plotly_pie.purge(pieRef.current);
-      return;
-    }
-
-    const autoSecs = autoCountingSummary.totalAuto?.seconds ?? 0;
-    const manualSecs = autoCountingSummary.totalManual?.seconds ?? 0;
-    const autoHuman = autoCountingSummary.totalAuto?.human ?? "00:00:00";
-    const manualHuman = autoCountingSummary.totalManual?.human ?? "00:00:00";
-
-    const pieslices = [
-      { label: "Auto", value: autoSecs, text: autoHuman, color: "#0062ff" },
-      {
-        label: "Manual",
-        value: manualSecs,
-        text: manualHuman,
-        color: "#ff0000",
-      },
-    ].filter((s) => s.value > 0);
-
-    const data = [
-      {
-        type: "pie",
-        hole: "0.45",
-        values: pieslices.map((s) => s.value),
-        labels: pieslices.map((s) => s.label),
-        text: pieslices.map((s) => s.text),
-        textinfo: "label+percent",
-        hovertemplate:
-          "<b>%{label}</b><br>%{text}<br>%{percent}<extra></extra>",
-        marker: { colors: pieslices.map((s) => s.color) },
-      },
-    ];
-
-    const layout = {
-      margin: { t: 20, b: 40, l: 40, r: 30 },
-      showlegend: true,
-      legend: { orientation: "h", y: -0.15 },
-      paper_bgcolor: "transparent",
-      plot_bgcolor: "transparent",
-      height: 220,
-    };
-
-    plotly_pie.react(pieRef.current, data, layout, {
-      responsive: true,
-      displaylogo: false,
-      displayModeBar: false,
-    });
-  }, [autoCountingSummary, autoCountingResult]);
-
-  useEffect(() => {
-    const plotly_pie = globalThis.Plotly;
-    if (!plotly_pie || !rangeRef.current) return;
-    if (!rangeValue) {
-      plotly_pie.purge(rangeRef.current);
-      return;
-    }
-
-    const normal = rangeValue.summary?.normal?.count ?? 0;
-    const lower = rangeValue.summary?.lower?.count ?? 0;
-    const higher = rangeValue.summary?.higher?.count ?? 0;
-
-    const allSlices = [
-      { label: "Dalam SP", value: normal, color: "#3b82f6" },
-      { label: "Lebih Rendah", value: lower, color: "#f59e0b" },
-      { label: "Lebih Tinggi", value: higher, color: "#ef4444" },
-    ].filter((s) => s.value > 0);
-
-    if (!allSlices.length) {
-      plotly_pie.purge(rangeRef.current);
-      return;
-    }
-
-    const data = [
-      {
-        type: "pie",
-        hole: 0.45,
-        values: allSlices.map((s) => s.value),
-        labels: allSlices.map((s) => s.label),
-        textinfo: "label+percent",
-        hovertemplate:
-          "<b>%{label}</b><br>%{value} records<br>%{percent}<extra></extra>",
-        marker: { colors: allSlices.map((s) => s.color) },
-      },
-    ];
-
-    const layout = {
-      margin: { t: 20, b: 40, l: 40, r: 30 },
-      showlegend: true,
-      legend: { orientation: "h", y: -0.15 },
-      paper_bgcolor: "transparent",
-      plot_bgcolor: "transparent",
-      height: 220,
-    };
-
-    plotly_pie.react(rangeRef.current, data, layout, {
-      responsive: true,
-      displaylogo: false,
-      displayModeBar: false,
-    });
-  }, [rangeValue]);
-
-  useEffect(() => {
-    selectedFileRef.current = selectedFile;
-  }, [selectedFile]);
-
-  useEffect(() => {
-    if (!message) return undefined;
-    const timer = setTimeout(() => setMessage(""), 3000);
-    return () => clearTimeout(timer);
-  }, [message]);
-
+  // API helpers function
   const parseApiError = useCallback(async (response) => {
     try {
-      const payload = await response.json();
-      return payload.detail || payload.error || JSON.stringify(payload);
+      const p = await response.json();
+      return p.detail || p.error || JSON.stringify(p);
     } catch {
       return `${response.status} ${response.statusText}`;
     }
   }, []);
 
-  const callApi = useCallback(
-    async (path, options) => {
-      const response = await fetch(`${backendUrl}${path}`, options);
-      if (!response.ok) throw new Error(await parseApiError(response));
-      return response.json();
-    },
-    [backendUrl, parseApiError],
-  );
+  const callApi = useCallback(async (path, options) => {
+    const res = await fetch(`${backendUrl}${path}`, options);
+    if (!res.ok) throw new Error(await parseApiError(res));
+    return res.json();
+  }, [backendUrl, parseApiError]);
 
   const normalizeFiles = useCallback((payload) => {
     if (Array.isArray(payload?.file_details)) {
       return payload.file_details.map((item) => ({
-        filename: item.filename,
-        displayName:
-          item.display_name ?? item.original_filename ?? item.filename,
+        filename:    item.filename,
+        displayName: item.display_name ?? item.original_filename ?? item.filename,
       }));
     }
     if (Array.isArray(payload?.files)) {
-      return payload.files.map((name) => ({
-        filename: name,
-        displayName: name,
-      }));
+      return payload.files.map((n) => ({ filename: n, displayName: n }));
     }
     return [];
   }, []);
 
-  const handleSelectFile = useCallback(
-    async (filename) => {
-      if (!filename) {
-        setSelectedFile("");
-        setColumns([]);
-        setNumericColumns([]);
-        setXColumn("");
-        setYColumn([""]);
-        setSizeColumn("");
-        setNamesColumn("");
-        setValuesColumn("");
-        setZColumn("");
-        setTimestampColumn("");
-        setStateColumn("");
-        setSummaryStatistics(null);
-        setPlotFigure(null);
-        setDurationResult(null);
-        setAutoCountingResult(null);
-        setRangeValue(null);
-        setDatasetInfo({}); // ← reset info
-        setMessage("");
-        setError("");
+  // ══════════════════════════════════════════════════════════════════════════
+  //  BACKGROUND REPORT — poll + enqueue
+  // ══════════════════════════════════════════════════════════════════════════
+  const _pollJob = useCallback((jobId, requestId) => {
+    if (autoReportRef.current) clearInterval(autoReportRef.current);
+
+    autoReportRef.current = setInterval(async () => {
+      if (requestId !== reportRequestRef.current) {
+        clearInterval(autoReportRef.current);
         return;
       }
-
-      setSelectedFile(filename);
-      setSummaryStatistics(null);
-      setPlotFigure(null);
-      setDurationResult(null);
-      setAutoCountingResult(null);
-      setRangeValue(null);
-      setDatasetInfo({}); // ← reset info while loading
-      setMessage("");
-      setError("");
-
       try {
-        // ── Fetch columns AND metadata in parallel ──────────────────────────
-        const [colPayload, infoPayload] = await Promise.all([
-          callApi(`/dataset/${encodeURIComponent(filename)}/columns`),
-          callApi(`/dataset/${encodeURIComponent(filename)}/info`).catch(
-            () => ({ info: {} }),
-          ),
-        ]);
-        // ───────────────────────────────────────────────────────────────────
-
-        const allColumns = colPayload.columns ?? [];
-        const numeric = colPayload.numeric_columns ?? [];
-
-        setColumns(allColumns);
-        setNumericColumns(numeric);
-        setDatasetInfo(infoPayload.info ?? {}); // ← store MILL / NAME / etc.
-
-        setXColumn((prev) =>
-          allColumns.includes(prev) ? prev : (allColumns[0] ?? ""),
-        );
-        setYColumn((prev) => {
-          const valid = prev.filter((col) => numeric.includes(col));
-          if (valid.length) return valid;
-          return numeric.length ? [numeric[0]] : [""];
-        });
-        setSizeColumn((prev) => (numeric.includes(prev) ? prev : ""));
-        setNamesColumn((prev) =>
-          allColumns.includes(prev) ? prev : (allColumns[0] ?? ""),
-        );
-        setValuesColumn((prev) =>
-          numeric.includes(prev) ? prev : (numeric[0] ?? ""),
-        );
-        setZColumn((prev) =>
-          numeric.includes(prev) ? prev : (numeric[0] ?? ""),
-        );
-
-        const timeKeywords = ["time", "timestamp"];
-        const autoDetectedTime =
-          allColumns.find((col) =>
-            timeKeywords.some((kw) => col.toLowerCase().includes(kw)),
-          ) ??
-          allColumns[0] ??
-          "";
-        setTimestampColumn(autoDetectedTime);
-
-        const stateKeywords = ["auto", "manual", "mode", "status"];
-        const autoDetectedState =
-          allColumns.find((col) =>
-            stateKeywords.some((kw) => col.toLowerCase().includes(kw)),
-          ) ??
-          numeric[0] ??
-          allColumns[0] ??
-          "";
-        setStateColumn(autoDetectedState);
-
-        const spKeywords = ["set_point", "setpoint", "sp"];
-        const pvKeywords = ["process_value", "pv", "process"];
-        const autoSp =
-          numeric.find((col) =>
-            spKeywords.some((kw) => col.toLowerCase().includes(kw)),
-          ) ??
-          numeric[0] ??
-          "";
-        const autoPv =
-          numeric.find((col) =>
-            pvKeywords.some((kw) => col.toLowerCase().includes(kw)),
-          ) ??
-          numeric[1] ??
-          numeric[0] ??
-          "";
-        setSpValue(autoSp);
-        setPvValue(autoPv);
-      } catch (err) {
-        setError(`Failed to read columns: ${err.message}`);
+        const res = await callApi(`/generate-report/status/${jobId}`);
+        if (requestId !== reportRequestRef.current) {
+          clearInterval(autoReportRef.current);
+          return;
+        }
+        if (res.status === "done") {
+          clearInterval(autoReportRef.current);
+          setAutoReport({
+            status: "done", jobId,
+            downloadName: res.filename || "report.pdf",
+            errorMsg: "",
+          });
+        } else if (res.status === "error") {
+          clearInterval(autoReportRef.current);
+          setAutoReport((prev) => ({
+            ...prev, status: "error",
+            errorMsg: res.detail || "Generation failed",
+          }));
+        }
+      } catch {
+        clearInterval(autoReportRef.current);
       }
-    },
-    [callApi],
-  );
+    }, 2500);
+  }, [callApi]);
+
+  const _enqueueReportJob = useCallback(async (
+    filename, tsCol, dtCol, stateCol, spCol, pvCol, configs, statCols, spvPairsArg,
+  ) => {
+    if (!filename) return;
+    if (autoReportRef.current) clearInterval(autoReportRef.current);
+    const requestId = ++reportRequestRef.current;
+    setAutoReport({ status: "pending", jobId: null, downloadName: "", errorMsg: "" });
+
+    const body = {
+      filename,
+      timestamp_column:     tsCol    || null,
+      date_column:          dtCol    || null,
+      state_column:         stateCol || null,
+      set_point_column:     spCol    || null,
+      process_value_column: pvCol    || null,
+      spv_pairs : spvPairsArg?.length
+        ? spvPairsArg.map((p)=>({
+            set_point_column : p.sp,
+            process_value_column : p.pv,
+            label : p.label || `${p.sp} vs ${p.pv}`,
+        }))
+        : null,
+      plot_configs:         configs.length ? configs : null,
+      stat_columns:         statCols?.length ? statCols : null,
+    };
+
+    try {
+      const res = await callApi("/generate-report/reportlab/async", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(body),
+      });
+      if (requestId !== reportRequestRef.current) return;
+      setAutoReport((prev) => ({ ...prev, jobId: res.job_id }));
+      _pollJob(res.job_id, requestId);
+    } catch (err) {
+      if (requestId !== reportRequestRef.current) return;
+      setAutoReport({ status: "error", jobId: null, downloadName: "", errorMsg: err.message });
+      setError(`Report job failed: ${err.message}`);
+    }
+  }, [callApi, _pollJob]);
+
+  const requestReportRefresh = useCallback((overrides = {}) => {
+    const filename = overrides.filename ?? selectedFile;
+    if (!filename) return;
+    _enqueueReportJob(
+      filename,
+      overrides.timestampColumn ?? timestampColumn,
+      overrides.dateColumn ?? dateTime,
+      overrides.stateColumn ?? stateColumn,
+      overrides.spColumn ?? spValue,
+      overrides.pvColumn ?? pvValue,
+      overrides.plotConfigs ?? plotConfigs,
+      overrides.statColumns ?? selectionData,
+      overrides.spvPairs ?? spvPairs,
+    );
+  }, [
+    _enqueueReportJob,
+    dateTime,
+    plotConfigs,
+    pvValue,
+    selectedFile,
+    selectionData,
+    spValue,
+    spvPairs,
+    stateColumn,
+    timestampColumn,
+  ]);
+
+  const downloadReport = useCallback(async (jobId, downloadName) => {
+    if (!jobId) return;
+    try {
+      const response = await fetch(`${backendUrl}/generate-report/download/${jobId}`);
+      if (!response.ok) throw new Error("Download failed");
+      const blob = await response.blob();
+      const url  = window.URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = downloadName || "report.pdf";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(`Download error: ${err.message}`);
+    }
+  }, [backendUrl]);
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  SELECT FILE
+  // ══════════════════════════════════════════════════════════════════════════
+  const handleSelectFile = useCallback(async (filename) => {
+    if (!filename) {
+      if (autoReportRef.current) clearInterval(autoReportRef.current);
+      reportRequestRef.current += 1;
+      setAutoReport({ status: "idle", jobId: null, downloadName: "", errorMsg: "" });
+      setPlotConfigs([]);
+      setSpvPairs([]);
+      setSelectedFile(""); setColumns([]); setNumericColumns([]);
+      setXColumn(""); setYColumn([""]); setSizeColumn("");
+      setNamesColumn(""); setValuesColumn(""); setZColumn("");
+      setTimestampColumn(""); setStateColumn("");
+      setSummaryStatistics(null); setPlotFigure(null);
+      setDurationResult(null); setAutoCountingResult(null);
+      setRangeValue(null); setDateTime(""); setDatasetInfo({});
+      setMessage(""); setError("");
+      return;
+    }
+
+    setSelectedFile(filename);
+    setPlotConfigs([]);
+    setSpvPairs([]);
+    setSummaryStatistics(null); setPlotFigure(null);
+    setDurationResult(null);    setAutoCountingResult(null);
+    setRangeValue(null);        setDatasetInfo({});
+    setMessage("");             setError("");
+
+    try {
+      const [colPayload, infoPayload] = await Promise.all([
+        callApi(`/dataset/${encodeURIComponent(filename)}/columns`),
+        callApi(`/dataset/${encodeURIComponent(filename)}/info`).catch(() => ({ info: {} })),
+      ]);
+
+      const allColumns = colPayload.columns         ?? [];
+      const numeric    = colPayload.numeric_columns ?? [];
+
+      setColumns(allColumns);
+      setNumericColumns(numeric);
+      setSelectionData(numeric);
+      setDatasetInfo(infoPayload.info ?? {});
+
+      setXColumn((p)      => allColumns.includes(p) ? p : (allColumns[0] ?? ""));
+      setYColumn((p)      => {
+        const valid = p.filter((c) => numeric.includes(c));
+        return valid.length ? valid : (numeric.length ? [numeric[0]] : [""]);
+      });
+      setSizeColumn((p)   => numeric.includes(p)   ? p : "");
+      setNamesColumn((p)  => allColumns.includes(p) ? p : (allColumns[0] ?? ""));
+      setValuesColumn((p) => numeric.includes(p)   ? p : (numeric[0]    ?? ""));
+      setZColumn((p)      => numeric.includes(p)   ? p : (numeric[0]    ?? ""));
+
+      const timeKeywords  = ["time", "timestamp"];
+      const dateKeywords  = ["date", "tanggal"];
+      const stateKeywords = ["auto", "manual", "mode", "status"];
+      const spKeywords    = ["set_point", "setpoint", "sp"];
+      const pvKeywords    = ["process_value", "pv", "process"];
+
+      const autoDetectedTime  = allColumns.find((c) => timeKeywords .some((k) => c.toLowerCase().includes(k))) ?? allColumns[0] ?? "";
+      const detectedDate      = allColumns.find((c) => dateKeywords .some((k) => c.toLowerCase().includes(k))) ?? "";
+      const autoDetectedState = allColumns.find((c) => stateKeywords.some((k) => c.toLowerCase().includes(k))) ?? numeric[0] ?? allColumns[0] ?? "";
+      const autoSp            = numeric.find((c) => spKeywords.some((k) => c.toLowerCase().includes(k))) ?? numeric[0] ?? "";
+      const autoPv            = numeric.find((c) => pvKeywords.some((k) => c.toLowerCase().includes(k))) ?? numeric[1] ?? numeric[0] ?? "";
+
+      setTimestampColumn(autoDetectedTime);
+      setDateTime(detectedDate);
+      setStateColumn(autoDetectedState);
+      setSpValue(autoSp);
+      setPvValue(autoPv);
+
+      setTimeout(() => {
+        _enqueueReportJob(
+          filename,
+          autoDetectedTime,
+          detectedDate,
+          autoDetectedState,
+          autoSp,
+          autoPv,
+          [],
+          numeric,
+          [],
+        );
+      }, 0);
+
+    } catch (err) {
+      setError(`Failed to read columns: ${err.message}`);
+    }
+  }, [callApi, _enqueueReportJob]);
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  EFFECTS
+  // ══════════════════════════════════════════════════════════════════════════
+  useEffect(() => {
+    const plotly_pie = globalThis.Plotly;
+    if (!plotly_pie || !pieRef.current) return;
+    if (!autoCountingResult) { plotly_pie.purge(pieRef.current); return; }
+
+    const autoSecs    = autoCountingSummary.totalAuto?.seconds   ?? 0;
+    const manualSecs  = autoCountingSummary.totalManual?.seconds ?? 0;
+    const autoHuman   = autoCountingSummary.totalAuto?.human     ?? "00:00:00";
+    const manualHuman = autoCountingSummary.totalManual?.human   ?? "00:00:00";
+
+    const pieslices = [
+      { label: "Auto",   value: autoSecs,   text: autoHuman,   color: "#1a9fd4" },
+      { label: "Manual", value: manualSecs, text: manualHuman, color: "#e63946" },
+    ].filter((s) => s.value > 0);
+
+    plotly_pie.react(
+      pieRef.current,
+      [{
+        type: "pie", hole: "0.45",
+        values: pieslices.map((s) => s.value),
+        labels: pieslices.map((s) => s.label),
+        text:   pieslices.map((s) => s.text),
+        textinfo: "label+percent",
+        hovertemplate: "<b>%{label}</b><br>%{text}<br>%{percent}<extra></extra>",
+        marker: { colors: pieslices.map((s) => s.color) },
+      }],
+      {
+        margin: { t: 20, b: 40, l: 40, r: 30 },
+        showlegend: true,
+        legend: { orientation: "h", y: -0.15, font: { color: "#8a9db0" } },
+        paper_bgcolor: "transparent",
+        plot_bgcolor: "transparent",
+        height: 220,
+        font: { family: "IBM Plex Sans, sans-serif", color: "#8a9db0" },
+      },
+      { responsive: true, displaylogo: false, displayModeBar: false },
+    );
+  }, [autoCountingSummary, autoCountingResult]);
 
   useEffect(() => {
+    const plotlyLib = globalThis.Plotly;
+    if (!plotlyLib || !plotRef.current) return;
+    if (!plotFigure) { plotlyLib.purge(plotRef.current); return; }
+
+    const isDateAxis = plotFigure.layout?.xaxis?.type === "date";
+    const xaxis = {
+      ...(plotFigure.layout?.xaxis ?? {}),
+      rangeslider: {
+        visible: true, thickness: 0.065,
+        bgcolor: "rgba(246,162,26,0.06)",
+        bordercolor: "rgba(246,162,26,0.22)", borderwidth: 1,
+      },
+    };
+    if (isDateAxis) {
+      xaxis.rangeselector = {
+        ...RANGE_SELECTOR_OPTIONS,
+        bgcolor: "#0e1420",
+        activecolor: "rgba(246,162,26,0.25)",
+        bordercolor: "rgba(246,162,26,0.3)",
+        borderwidth: 1,
+        font: { family: "Barlow Condensed, sans-serif", size: 11, color: "#c8d6e5" },
+      };
+    }
+
+    const layout = {
+      ...plotFigure.layout,
+      xaxis,
+      paper_bgcolor: "transparent",
+      plot_bgcolor:  "transparent",
+      font: { family: "IBM Plex Sans, sans-serif", color: "#8a9db0", size: 11 },
+    };
+
+    plotlyLib.react(plotRef.current, plotFigure.data, layout, plotConfig);
+  }, [plotFigure, plotConfig]);
+
+  useEffect(() => {
+    const plotly_pie = globalThis.Plotly;
+    if (!plotly_pie || !rangeRef.current) return;
+    if (!rangeValue) { plotly_pie.purge(rangeRef.current); return; }
+
+    const normal = rangeValue.summary?.normal?.count  ?? 0;
+    const lower  = rangeValue.summary?.lower?.count   ?? 0;
+    const higher = rangeValue.summary?.higher?.count  ?? 0;
+
+    const allSlices = [
+      { label: "Dalam SP",      value: normal, color: "#1a9fd4" },
+      { label: "Lebih Rendah",  value: lower,  color: "#f6a21a" },
+      { label: "Lebih Tinggi",  value: higher, color: "#e63946" },
+    ].filter((s) => s.value > 0);
+
+    if (!allSlices.length) { plotly_pie.purge(rangeRef.current); return; }
+
+    plotly_pie.react(
+      rangeRef.current,
+      [{
+        type: "pie", hole: 0.45,
+        values: allSlices.map((s) => s.value),
+        labels: allSlices.map((s) => s.label),
+        textinfo: "label+percent",
+        hovertemplate: "<b>%{label}</b><br>%{value} records<br>%{percent}<extra></extra>",
+        marker: { colors: allSlices.map((s) => s.color) },
+      }],
+      {
+        margin: { t: 20, b: 40, l: 40, r: 30 },
+        showlegend: true,
+        legend: { orientation: "h", y: -0.15, font: { color: "#8a9db0" } },
+        paper_bgcolor: "transparent",
+        plot_bgcolor: "transparent",
+        height: 220,
+        font: { family: "IBM Plex Sans, sans-serif", color: "#8a9db0" },
+      },
+      { responsive: true, displaylogo: false, displayModeBar: false },
+    );
+  }, [rangeValue]);
+
+  useEffect(() => { selectedFileRef.current = selectedFile; }, [selectedFile]);
+
+  useEffect(() => {
+    if (!message) return undefined;
+    const t = setTimeout(() => setMessage(""), 3000);
+    return () => clearTimeout(t);
+  }, [message]);
+
+  useEffect(() => {
+    return () => {
+      if (autoReportRef.current) clearInterval(autoReportRef.current);
+    };
+  }, []);
+
+  // Initial file list load
+  useEffect(() => {
     let isMounted = true;
-    const loadFiles = async () => {
+    (async () => {
       try {
         const payload = await callApi("/files");
         if (!isMounted) return;
@@ -385,270 +573,193 @@ function App() {
       } catch (err) {
         if (isMounted) setError(`Failed to load files: ${err.message}`);
       }
-    };
-    loadFiles();
-    return () => {
-      isMounted = false;
-    };
+    })();
+    return () => { isMounted = false; };
   }, [callApi, handleSelectFile, normalizeFiles]);
 
+  // ══════════════════════════════════════════════════════════════════════════
+  //  HANDLERS
+  // ══════════════════════════════════════════════════════════════════════════
   const handleUpload = async () => {
-    if (!uploadFile) {
-      setError("Pilih File Dengan Format CSV atau XLSX!");
-      return;
-    }
+    if (!uploadFile.length) { setError("Pilih File Dengan Format CSV atau XLSX!"); return; }
     const formData = new FormData();
     for (const file of uploadFile) formData.append("files", file);
-    setIsUploading(true);
-    setError("");
-    setMessage("");
+    setIsUploading(true); setError(""); setMessage("");
     try {
-      const payload = await callApi("/upload", {
-        method: "POST",
-        body: formData,
-      });
-      const results = payload.results ?? [];
+      const payload   = await callApi("/upload", { method: "POST", body: formData });
+      const results   = payload.results ?? [];
       const succeeded = results.filter((r) => r.status === "Berhasil");
-      const failed = results.filter((r) => r.status === "Gagal");
-      if (failed.length)
-        setError(
-          failed.map((r) => `${r.original_filename}: ${r.error}`).join(" | "),
-        );
-      if (succeeded.length)
-        setMessage(
-          `Uploaded: ${succeeded.map((r) => r.original_filename).join(", ")}`,
-        );
+      const failed    = results.filter((r) => r.status === "Gagal");
+      if (failed.length)    setError(failed.map((r) => `${r.original_filename}: ${r.error}`).join(" | "));
+      if (succeeded.length) setMessage(`Uploaded: ${succeeded.map((r) => r.original_filename).join(", ")}`);
       setUploadFile([]);
-      const newFiles = succeeded.map((r) => ({
-        filename: r.filename,
-        displayName: r.original_filename ?? r.filename,
-      }));
+      const newFiles = succeeded.map((r) => ({ filename: r.filename, displayName: r.original_filename ?? r.filename }));
       setFiles((prev) => {
-        const existing = prev.filter(
-          (item) => !newFiles.some((added) => added.filename === item.filename),
-        );
+        const existing = prev.filter((item) => !newFiles.some((a) => a.filename === item.filename));
         return [...newFiles, ...existing];
       });
       if (newFiles.length) await handleSelectFile(newFiles[0].filename);
     } catch (err) {
       setError(`Upload failed: ${err.message}`);
-    } finally {
-      setIsUploading(false);
-    }
+    } finally { setIsUploading(false); }
   };
 
   const handleDeleteFile = async () => {
-    if (!selectedFile) {
-      setError("Select a dataset first.");
-      return;
-    }
+    if (!selectedFile) { setError("Select a dataset first."); return; }
     const targetFile = selectedFile;
-    const confirmed = globalThis.confirm?.(`Delete ${targetFile}?`) ?? true;
+    const confirmed  = globalThis.confirm?.(`Delete ${targetFile}?`) ?? true;
     if (!confirmed) return;
-    setIsDeleting(true);
-    setError("");
-    setMessage("");
+    setIsDeleting(true); setError(""); setMessage("");
     try {
-      await callApi(`/files/${encodeURIComponent(targetFile)}`, {
-        method: "DELETE",
-      });
+      await callApi(`/files/${encodeURIComponent(targetFile)}`, { method: "DELETE" });
       setMessage(`Deleted: ${targetFile}`);
     } catch (err) {
       if (String(err.message).toLowerCase().includes("not found")) {
         setMessage(`Already deleted: ${targetFile}`);
-      } else {
-        setError(`Delete failed: ${err.message}`);
-        return;
-      }
-    } finally {
-      setIsDeleting(false);
-    }
+      } else { setError(`Delete failed: ${err.message}`); return; }
+    } finally { setIsDeleting(false); }
     const remaining = files.filter((item) => item.filename !== targetFile);
     setFiles(remaining);
     await handleSelectFile(remaining[0]?.filename ?? "");
   };
 
   const handleAnalyze = async () => {
-    if (!hasDataset) {
-      setError("Select a dataset first.");
-      return;
-    }
-    setIsAnalyzing(true);
-    setError("");
+    if (!hasDataset) { setError("Select a dataset first."); return; }
+    setIsAnalyzing(true); setError("");
     try {
       const payload = await callApi("/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: selectedFile }),
       });
       setSummaryStatistics(payload.summary_statistics ?? null);
       setMessage("Summary statistics generated.");
-    } catch (err) {
-      setError(`Analyze failed: ${err.message}`);
-    } finally {
-      setIsAnalyzing(false);
-    }
+    } catch (err) { setError(`Analyze failed: ${err.message}`); }
+    finally { setIsAnalyzing(false); }
   };
 
   const handleRangeAnalysis = async () => {
-    if (!hasDataset) {
-      setError("Pilih Dataset terlebih dahulu.");
-      return;
-    }
-    if (!spValue) {
-      setError("Pilih kolom Set Point.");
-      return;
-    }
-    if (!pvValue) {
-      setError("Pilih kolom Process Value.");
-      return;
-    }
-    setRangeAnalyzing(true);
-    setError("");
+    if (!hasDataset) { setError("Pilih Dataset terlebih dahulu."); return; }
+    if (!spValue)    { setError("Pilih kolom Set Point.");          return; }
+    if (!pvValue)    { setError("Pilih kolom Process Value.");      return; }
+    setRangeAnalyzing(true); setError("");
     try {
       const payload = await callApi("/spv-analysis", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: selectedFile,
-          set_point_column: spValue,
-          process_value_column: pvValue,
-        }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: selectedFile, set_point_column: spValue, process_value_column: pvValue }),
       });
       setRangeValue(payload);
       setMessage("Range Analysis Complete.");
-    } catch (err) {
-      setError(`Analisis Range Gagal: ${err.message}`);
-    } finally {
-      setRangeAnalyzing(false);
-    }
+    } catch (err) { setError(`Analisis Range Gagal: ${err.message}`); }
+    finally { setRangeAnalyzing(false); }
   };
 
-  const handleAddYColumn = () => setYColumn((prev) => [...prev, ""]);
-  const handleRemoveYColumn = (index) =>
-    setYColumn((prev) => prev.filter((_, i) => i !== index));
-  const handleChangeYColumn = (index, value) =>
-    setYColumn((prev) => prev.map((col, i) => (i === index ? value : col)));
+  const handleAddYColumn    = () => setYColumn((p) => [...p, ""]);
+  const handleRemoveYColumn = (i) => setYColumn((p) => p.filter((_, idx) => idx !== i));
+  const handleChangeYColumn = (i, v) => setYColumn((p) => p.map((c, idx) => (idx === i ? v : c)));
 
   const handlePlot = async () => {
-    if (!hasDataset) {
-      setError("Select a dataset first.");
-      return;
-    }
-    if (!chartType) {
-      setError("Choose a chart type first.");
-      return;
-    }
-    const yColumnFiltered = yColumn.filter(Boolean);
-    const payload = {
-      filename: selectedFile,
-      chart_type: chartType,
-      x: xColumn || null,
-      y: yColumnFiltered.length ? yColumnFiltered : null,
-      size: sizeColumn || null,
-      names: namesColumn || null,
-      values: valuesColumn || null,
-      z: zColumn || null,
-    };
-    setIsPlotting(true);
-    setError("");
+    if (!hasDataset) { setError("Select a dataset first."); return; }
+    if (!chartType)  { setError("Choose a chart type first."); return; }
+    const yFiltered = yColumn.filter(Boolean);
+    setIsPlotting(true); setError("");
     try {
       const response = await callApi("/plot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename:    selectedFile,
+          chart_type:  chartType,
+          x:           xColumn      || null,
+          y:           yFiltered.length ? yFiltered : null,
+          size:        sizeColumn   || null,
+          names:       namesColumn  || null,
+          values:      valuesColumn || null,
+          z:           zColumn      || null,
+          date_column: dateTime     || null,
+        }),
       });
       setPlotFigure(response.figure);
-      setPlotConfig(
-        response.config ?? { responsive: true, displaylogo: false },
-      );
+      setPlotConfig(response.config ?? { responsive: true, displaylogo: false });
       setMessage(`Rendered ${response.chart_type} chart.`);
-    } catch (err) {
-      setError(`Plot failed: ${err.message}`);
-    } finally {
-      setIsPlotting(false);
-    }
+    } catch (err) { setError(`Plot failed: ${err.message}`); }
+    finally { setIsPlotting(false); }
   };
 
   const handleDuration = async () => {
-    if (!hasDataset) {
-      setError("Select a dataset first.");
-      return;
-    }
-    if (!timestampColumn) {
-      setError("Choose a timestamp column first.");
-      return;
-    }
-    setIsCalculatingDuration(true);
-    setError("");
+    if (!hasDataset)       { setError("Select a dataset first.");          return; }
+    if (!timestampColumn)  { setError("Choose a timestamp column first."); return; }
+    setIsCalculatingDuration(true); setError("");
     try {
       const payload = await callApi("/duration", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: selectedFile,
-          timestamp_column: timestampColumn,
-        }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: selectedFile, timestamp_column: timestampColumn, date_column: dateTime || null, dayfirst }),
       });
       setDurationResult(payload);
       setMessage("Total hour record calculated.");
-    } catch (err) {
-      setError(`Duration failed: ${err.message}`);
-    } finally {
-      setIsCalculatingDuration(false);
-    }
+    } catch (err) { setError(`Duration failed: ${err.message}`); }
+    finally { setIsCalculatingDuration(false); }
   };
 
   const handleAutoCounting = async () => {
-    if (!hasDataset) {
-      setError("Select a dataset first.");
-      return;
-    }
-    if (!timestampColumn) {
-      setError("Choose a timestamp column first.");
-      return;
-    }
-    if (!stateColumn) {
-      setError("Choose a state column first.");
-      return;
-    }
-    setIsAutoCounting(true);
-    setError("");
+    if (!hasDataset)      { setError("Select a dataset first.");          return; }
+    if (!timestampColumn) { setError("Choose a timestamp column first."); return; }
+    if (!stateColumn)     { setError("Choose a state column first.");     return; }
+    setIsAutoCounting(true); setError("");
     try {
       const payload = await callApi("/counting", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: selectedFile,
-          timestamp_column: timestampColumn,
-          state_column: stateColumn,
-        }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: selectedFile, timestamp_column: timestampColumn, state_column: stateColumn, date_column: dateTime || null, dayfirst }),
       });
       setAutoCountingResult(payload);
       setMessage("Auto/Manual totals calculated.");
-    } catch (err) {
-      setError(`Auto/Manual counting failed: ${err.message}`);
-    } finally {
-      setIsAutoCounting(false);
-    }
+    } catch (err) { setError(`Auto/Manual counting failed: ${err.message}`); }
+    finally { setIsAutoCounting(false); }
   };
 
+  const handleAddChartToReport = () => {
+    const cfg = {
+      chart_type:  chartType,
+      x:           xColumn    || null,
+      y:           yColumn.filter(Boolean),
+      title:       null,
+      date_column: dateTime   || null,
+    };
+    const next = [...plotConfigs, cfg];
+    setPlotConfigs(next);
+    setMessage(`Chart #${next.length} ditambahkan ke report.`);
+    requestReportRefresh({ plotConfigs: next });
+  };
+
+  const handleAddPairToReport = () => {
+    if(!spValue || !pvValue) {
+      setError("Choose Set Point and Process Value First!");
+      return;
+    }
+    const pair = { sp: spValue, pv:pvValue, label : `${spValue} vs ${pvValue}`};
+    const next = [...spvPairs, pair];
+    setSpvPairs(next);
+    setMessage(`SP/PV Pair #${next.length} added to Report`);
+    requestReportRefresh({spvPairs:next});
+  };
+  
   const formatNumber = (value) => {
-    if (typeof value !== "number" || Number.isNaN(value)) return "-";
+    if (typeof value !== "number" || Number.isNaN(value)) return "—";
     return value.toLocaleString(undefined, { maximumFractionDigits: 3 });
   };
 
   const datasetInfoEntries = Object.entries(datasetInfo);
 
+  //  RENDER
   return (
     <div className="dashboard-app">
+
+      {/* ── HERO ─────────────────────────────────────────────────────────── */}
       <header className="hero">
         <div className="hero-title">
-          <img className="hero-logo" src={logo} alt="Logo" />
-          <h1>INTERACTIVE DASHBOARD</h1>
+          <img className="hero-logo" src={logo} alt="Sinarmas Logo" />
+          <div className="hero-copy">
+            <h1>Interactive Dashboard</h1>
+          </div>
         </div>
-
-        {/* ── DATASET INFO BADGES (MILL / NAME / …) ──────────────────── */}
         {datasetInfoEntries.length > 0 && (
           <div className="dataset-info-bar">
             {datasetInfoEntries.map(([key, value]) => (
@@ -659,73 +770,121 @@ function App() {
             ))}
           </div>
         )}
-        {/* ─────────────────────────────────────────────────────────────── */}
       </header>
+
       <main className="content-grid">
+
+        {/* ── DATA UPLOAD ──────────────────────────────────────────────── */}
         <section className="panel data-source">
-          <h2>DATA UPLOAD</h2>
+          <h2>Data Upload</h2>
           <div className="inline-actions">
             <input
-              type="file"
-              multiple
-              accept=".csv,.xlsx"
-              onChange={(event) =>
-                setUploadFile(Array.from(event.target.files ?? []))
-              }
+              type="file" multiple accept=".csv,.xlsx"
+              onChange={(e) => setUploadFile(Array.from(e.target.files ?? []))}
             />
           </div>
           <div className="inline-actions file-actions">
-            <button
-              type="button"
-              onClick={handleUpload}
-              disabled={isUploading || !uploadFile.length}
-            >
-              {isUploading ? "Uploading..." : "Upload"}
+            <button type="button" onClick={handleUpload}
+              disabled={isUploading || !uploadFile.length}>
+              {isUploading ? "Uploading…" : "Upload"}
             </button>
-            <button
-              type="button"
-              className="action-button ghost"
-              onClick={handleDeleteFile}
-              disabled={!hasDataset || isDeleting}
-            >
-              {isDeleting ? "Deleting..." : "Delete"}
+            <button type="button" className="action-button danger"
+              onClick={handleDeleteFile} disabled={!hasDataset || isDeleting}>
+              {isDeleting ? "Deleting…" : "Delete"}
             </button>
           </div>
           <label className="field">
-            <select
-              value={selectedFile}
+            <select value={selectedFile}
               onChange={(e) => handleSelectFile(e.target.value)}
-              disabled={!files.length}
-            >
+              disabled={!files.length}>
               <option value="">(Select dataset)</option>
-              {files.map((file) => (
-                <option key={file.filename} value={file.filename}>
-                  {file.displayName}
-                </option>
+              {files.map((f) => (
+                <option key={f.filename} value={f.filename}>{f.displayName}</option>
               ))}
             </select>
           </label>
+          {error && <p className="status error" style={{ marginTop: "0.75rem" }}>{error}</p>}
+          {message && !error && <p className="status ok" style={{ marginTop: "0.75rem" }}>{message}</p>}
         </section>
 
+        {/* ── SUMMARY SHEET ────────────────────────────────────────────── */}
         <section className="panel summary">
-          <h2>SUMMARY SHEET</h2>
-          {!summaryRows.length && <p className="muted"></p>}
+          <div className = "summary-header">
+            <h2>Data Summary</h2>
+            {numericColumns.length > 0 && (
+              <button
+                type = "button"
+                className = {showFilter ? "red stat-mini-btn" : "ghost stat-mini-btn"}
+                onClick={() => setShowFilter((p) => !p)}
+              >
+                {showFilter?"Hide":`▼ Columns (${selectionData.length}/${numericColumns.length})`}
+              </button>
+            )}
+          </div>
+
+          {showFilter && numericColumns.length > 0 && (
+            <div className = "stat-filter-panel">
+              <div className = "stat-filter-actions">
+                <button type = "button"
+                 className = "y-add"
+                 onClick = {() => {
+                    setSelectionData(numericColumns);
+                    requestReportRefresh({statColumns:numericColumns});
+                 }}
+                 >
+                  Select All
+                 </button>
+                 <button type = "button"
+                    className = "y-remove"
+                    style = {{fontSize:"0.6rem",padding:"2px 8px"}}
+                    onClick = {() => {
+                      setSelectionData([]);
+                      requestReportRefresh({statColumns:[]});
+                    }}>
+                      Clear All
+                    </button>
+              </div>
+              <div className = "stat-filter-grid">
+                {numericColumns.map((col) => (
+                  <label key = {col} className = "stat-col-checkbox">
+                    <input
+                      type = "checkbox"
+                      checked = {selectionData.includes(col)}
+                      onChange = {(e) => {
+                        const next = e.target.checked
+                        ? [...selectionData,col]
+                        : selectionData.filter((c)=>c !== col);
+                      setSelectionData(next);
+                      requestReportRefresh({statColumns:next});
+                      }}
+                    />
+                    <span title = {col}>{col}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!summaryRows.length && (
+            <p className = "muted">
+              {summaryStatistics
+                ? ""
+                : ""}
+            </p>
+          )}
           {!!summaryRows.length && (
-            <div className="table-scroll">
+            <div className = "table-scroll">
               <table>
                 <thead>
                   <tr>
-                    <th>Column</th>
-                    <th>Mean</th>
-                    <th>Median</th>
-                    <th>Min</th>
-                    <th>Max</th>
-                    <th>Std</th>
+                    {["Column","Mean","Median","Min","Max","Std"].map((h)=>(
+                      <th key = {h}>{h}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {summaryRows.map((row) => (
-                    <tr key={row.column}>
+                    <tr key = {row.column}>
                       <td>{row.column}</td>
                       <td>{formatNumber(row.mean)}</td>
                       <td>{formatNumber(row.median)}</td>
@@ -738,392 +897,360 @@ function App() {
               </table>
             </div>
           )}
-        </section>
+          </section>
 
-        {/* CHART SETUP */}
+        {/* ── CHART SETUP ──────────────────────────────────────────────── */}
         <section className="panel chart-setup">
-          <h2>CHART SETUP</h2>
+          <h2>Chart Setup</h2>
           <div className="form-grid">
             <label className="field chart-field">
               Chart type
-              <select
-                className="input-compact compact-select"
-                value={chartType}
-                onChange={(e) => setChartType(e.target.value)}
-              >
+              <select className="input-compact compact-select" value={chartType}
+                onChange={(e) => setChartType(e.target.value)}>
                 <option value="">(None)</option>
-                {CHART_OPTIONS.map((chart) => (
-                  <option key={chart.value} value={chart.value}>
-                    {chart.label}
-                  </option>
+                {CHART_OPTIONS.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
                 ))}
               </select>
             </label>
 
             {showXY && (
               <label className="field x-field">
-                Nilai X
-                <select
-                  className="input-compact"
-                  value={xColumn}
-                  onChange={(e) => setXColumn(e.target.value)}
-                >
+                X Axis
+                <select className="input-compact" value={xColumn}
+                  onChange={(e) => setXColumn(e.target.value)}>
                   <option value="">(None)</option>
-                  {columns.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
+                  {columns.map((n) => <option key={n} value={n}>{n}</option>)}
                 </select>
               </label>
             )}
 
             {showXY && (
               <div className="field y-field">
-                <span>Nilai Y</span>
+                <span>Y Axis</span>
                 <div className="y-list">
-                  {yColumn.map((col, index) => (
-                    <div key={`y-${index}`} className="y-row">
-                      <select
-                        className="input-compact y-select"
-                        value={col}
-                        onChange={(e) =>
-                          handleChangeYColumn(index, e.target.value)
-                        }
-                      >
+                  {yColumn.map((col, idx) => (
+                    <div key={`y-${idx}`} className="y-row">
+                      <select className="input-compact y-select" value={col}
+                        onChange={(e) => handleChangeYColumn(idx, e.target.value)}>
                         <option value="">(None)</option>
-                        {numericColumns.map((name) => (
-                          <option key={name} value={name}>
-                            {name}
-                          </option>
-                        ))}
+                        {numericColumns.map((n) => <option key={n} value={n}>{n}</option>)}
                       </select>
                       {yColumn.length > 1 && (
-                        <button
-                          type="button"
-                          className="y-remove"
-                          onClick={() => handleRemoveYColumn(index)}
-                        >
-                          Hapus
-                        </button>
+                        <button type="button" className="y-remove"
+                          onClick={() => handleRemoveYColumn(idx)}>Remove</button>
                       )}
                     </div>
                   ))}
                 </div>
-                <button
-                  type="button"
-                  className="y-add"
-                  onClick={handleAddYColumn}
-                >
-                  Tambah Input
+                <button type="button" className="y-add" onClick={handleAddYColumn}>
+                  + Add Series
                 </button>
               </div>
             )}
-
-            {showHeatmap && (
-              <label className="field z-field">
-                Nilai Z
-                <select
-                  value={zColumn}
-                  onChange={(e) => setZColumn(e.target.value)}
-                >
-                  <option value="">(None)</option>
-                  {numericColumns.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
           </div>
 
-          <div className="inline-actions">
-            <button
-              type="button"
-              onClick={handleAnalyze}
-              disabled={!hasDataset || isAnalyzing}
-            >
-              {isAnalyzing ? "Analyzing..." : "Rangkuman Analisis Data"}
+          <div className="inline-actions" style={{ marginTop: "0.75rem" }}>
+            <button type="button" onClick={handleAnalyze}
+              disabled={!hasDataset || isAnalyzing}>
+              {isAnalyzing ? "Analyzing…" : "Summary Statistics"}
+            </button>
+            <button type="button" onClick={handlePlot}
+              disabled={!hasDataset || isPlotting}>
+              {isPlotting ? "Rendering…" : "Generate Plot"}
+            </button>
+            <button type="button" className="action-button ghost"
+              disabled={!chartType || !hasDataset}
+              onClick={handleAddChartToReport}>
+              {`+ Add to Report${plotConfigs.length ? ` (${plotConfigs.length})` : ""}`}
             </button>
             <button
               type="button"
-              onClick={handlePlot}
-              disabled={!hasDataset || isPlotting}
-            >
-              {isPlotting ? "Rendering..." : "Buat Plot Analisis"}
-            </button>
+              className="action-button"
+              onClick={() => {
+                if(autoReport.status === "done"){
+                  downloadReport(autoReport.jobId,autoReport.downloadName);
+                } else if (autoReport.status === "idle" || autoReport.status === "error"){
+                  requestReportRefresh();
+                }
+              }}
+              disabled={!hasDataset || autoReport.status === "pending"}>
+                {autoReport.status === "pending" ? "Generating...":
+                 autoReport.status === "done" ? "⬇Download PDF":
+                 autoReport.status === "error" ? "Retry": "Generate Report"}
+              </button>
+              {autoReport.status === "pending" && (
+                <div className = "pdf-progress">
+                  <div className = "pdf-progress-bar">
+                    <div className = "pdf-progress-fill"/>
+                  </div>
+                  <p className = "pdf-progress-label"> Generating PDF Report </p>
+                </div>
+              )}
+              {autoReport.status === "error" && (
+                <p className = "status error" style={{fontSize:"0.72rem"}}>
+                  {autoReport.errorMsg || "Generating Report Failed"}
+                </p>
+              )}
           </div>
+
+          {plotConfigs.length > 0 && (
+            <div className="duration-card" style={{ marginTop: "0.85rem" }}>
+              <div className="duration-row" style={{ borderBottom: "none", paddingBottom: 0 }}>
+                <span className="duration-label" style={{ fontWeight: 700 }}>Charts in Report</span>
+                <button type="button" className="y-remove"
+                  style={{ fontSize: "0.62rem", height: "22px", padding: "0 8px" }}
+                  onClick={() => {
+                    const next = [];
+                    setPlotConfigs(next);
+                    setMessage("All charts removed from report.");
+                    requestReportRefresh({ plotConfigs: next });
+                  }}>
+                  Clear All
+                </button>
+              </div>
+              {plotConfigs.map((c, i) => (
+                <div key={i} className="duration-row">
+                  <span className="duration-label">#{i + 1} {c.chart_type.toUpperCase()}</span>
+                  <span className="duration-value" style={{ fontSize: "0.72rem" }}>
+                    {c.x} × {(c.y || []).join(", ")}
+                  </span>
+                  <button type="button" className="y-remove"
+                    style={{ fontSize: "0.58rem", height: "20px", padding: "0 6px", marginLeft: "6px" }}
+                    onClick={() => {
+                      const next = plotConfigs.filter((_, idx) => idx !== i);
+                      setPlotConfigs(next);
+                      requestReportRefresh({ plotConfigs: next });
+                    }}>×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
-        {/* VISUALISASI */}
+        {/* ── VISUALISASI ──────────────────────────────────────────────── */}
         <section className="panel output">
-          {error && <p className="status error">{error}</p>}
-          <h2>VISUALISASI DATA</h2>
+          <h2>Data Visualisation</h2>
           <div className="plot-wrapper">
             {plotFigure && message && (
               <p className="status ok plot-message">{message}</p>
             )}
-            <div
-              ref={plotRef}
-              className={plotFigure ? "plot-canvas ready" : "plot-canvas"}
-            />
+            <div ref={plotRef}
+              className={plotFigure ? "plot-canvas ready" : "plot-canvas"} />
             {!plotFigure && (
               <div className="empty-state">
-                <p>No chart yet.</p>
+                <p>No chart rendered.</p>
                 <p>Upload data, choose columns, then click Generate Plot.</p>
               </div>
             )}
           </div>
         </section>
 
+        {/* ── BOTTOM ROW ───────────────────────────────────────────────── */}
         <div className="bottom-row">
+
           {/* HOUR RECORD */}
           <section className="panel hour-record">
-            <h2>HOUR RECORD</h2>
+            <h2>Hour Record</h2>
             <label className="field">
-              <select
-                value={timestampColumn}
+              Timestamp Column
+              <select value={timestampColumn}
                 onChange={(e) => {
-                  setTimestampColumn(e.target.value);
-                  setDurationResult(null);
-                  setAutoCountingResult(null);
+                  const next = e.target.value;
+                  setTimestampColumn(next);
+                  setDurationResult(null); setAutoCountingResult(null);
+                  requestReportRefresh({ timestampColumn: next });
                 }}
-                disabled={!columns.length}
-              >
+                disabled={!columns.length}>
                 <option value="">(None)</option>
-                {columns.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
+                {columns.map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </label>
-            <button
-              type="button"
-              className="action-button"
+            <button type="button" className="action-button"
               onClick={handleDuration}
-              disabled={!hasDataset || isCalculatingDuration}
-            >
-              {isCalculatingDuration ? "Calculating..." : "TOTAL HOUR RECORD"}
+              disabled={!hasDataset || isCalculatingDuration}>
+              {isCalculatingDuration ? "Calculating…" : "Total Hour Record"}
             </button>
             {durationResult && (
               <div className="duration-card">
-                <div className="duration-row">
-                  <span className="duration-label">Start</span>
-                  <span className="duration-value">
-                    {durationResult.start_time}
-                  </span>
-                </div>
-                <div className="duration-row">
-                  <span className="duration-label">End</span>
-                  <span className="duration-value">
-                    {durationResult.end_time}
-                  </span>
-                </div>
-                <div className="duration-row">
-                  <span className="duration-label">Total (HH:MM:SS)</span>
-                  <span className="duration-value">
-                    {durationResult.total_duration?.human_readable ?? "-"}
-                  </span>
-                </div>
-                <div className="duration-row">
-                  <span className="duration-label">Minutes</span>
-                  <span className="duration-value">
-                    {formatNumber(durationResult.total_duration?.minutes)}
-                  </span>
-                </div>
-                <div className="duration-row">
-                  <span className="duration-label">Valid Records</span>
-                  <span className="duration-value">
-                    {formatNumber(durationResult.total_records)}
-                  </span>
-                </div>
+                {[
+                  ["Start",             durationResult.start_time],
+                  ["End",               durationResult.end_time],
+                  ["Total (HH:MM:SS)",  durationResult.total_duration?.human_readable ?? "—"],
+                  ["Minutes",           formatNumber(durationResult.total_duration?.minutes)],
+                  ["Valid Records",     formatNumber(durationResult.total_records)],
+                ].map(([label, value]) => (
+                  <div className="duration-row" key={label}>
+                    <span className="duration-label">{label}</span>
+                    <span className="duration-value">{value}</span>
+                  </div>
+                ))}
               </div>
             )}
           </section>
 
           {/* AUTO RECORD */}
           <section className="panel auto-record">
-            <h2>AUTO RECORD</h2>
+            <h2>Auto Record</h2>
             <label className="field">
-              <select
-                value={stateColumn}
+              State Column
+              <select value={stateColumn}
                 onChange={(e) => {
-                  setStateColumn(e.target.value);
+                  const next = e.target.value;
+                  setStateColumn(next);
                   setAutoCountingResult(null);
+                  requestReportRefresh({ stateColumn: next });
                 }}
-                disabled={!stateColumnOptions.length}
-              >
+                disabled={!stateColumnOptions.length}>
                 <option value="">(None)</option>
-                {stateColumnOptions.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
+                {stateColumnOptions.map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </label>
             <div className="action-stack">
-              <button
-                type="button"
-                className="action-button"
+              <button type="button" className="action-button"
                 onClick={handleAutoCounting}
-                disabled={!hasDataset || isAutoCounting}
-              >
-                {isAutoCounting ? "Calculating..." : "TOTAL AUTO / MANUAL"}
+                disabled={!hasDataset || isAutoCounting}>
+                {isAutoCounting ? "Calculating…" : "Total Auto / Manual"}
               </button>
             </div>
             {autoCountingSummary && (
               <div className="duration-card">
-                <div className="duration-row">
-                  <span className="duration-label">Total Recorded</span>
-                  <span className="duration-value">
-                    {autoCountingSummary.totalRecorded?.human ?? "-"}
-                  </span>
-                </div>
-                <div className="duration-row">
-                  <span className="duration-label">Auto Total (HH:MM:SS)</span>
-                  <span className="duration-value">
-                    {autoCountingSummary.totalAuto?.human ?? "-"}
-                    {autoCountingSummary.totalAuto?.percentage != null && (
-                      <span className="duration-pct">
-                        {" "}
-                        ({autoCountingSummary.totalAuto.percentage}%)
-                      </span>
-                    )}
-                  </span>
-                </div>
-                <div className="duration-row">
-                  <span className="duration-label">
-                    Manual Total (HH:MM:SS)
-                  </span>
-                  <span className="duration-value">
-                    {autoCountingSummary.totalManual?.human ?? "-"}
-                    {autoCountingSummary.totalManual?.percentage != null && (
-                      <span className="duration-pct">
-                        {" "}
-                        ({autoCountingSummary.totalManual.percentage}%)
-                      </span>
-                    )}
-                  </span>
-                </div>
-                <div className="duration-row">
-                  <span className="duration-label">Segments</span>
-                  <span className="duration-value">
-                    {formatNumber(autoCountingSummary.totalSegments)}
-                  </span>
-                </div>
-                <div className="duration-row">
-                  <span className="duration-label">Records</span>
-                  <span className="duration-value">
-                    {formatNumber(autoCountingSummary.totalRecords)}
-                  </span>
-                </div>
-                <div
-                  ref={pieRef}
-                  style={{
-                    width: "100%",
-                    minHeight: autoCountingResult ? 220 : 0,
-                  }}
-                />
+                {[
+                  ["Total Recorded",          autoCountingSummary.totalRecorded?.human     ?? "—",  null],
+                  ["Auto Total (HH:MM:SS)",   autoCountingSummary.totalAuto?.human         ?? "—",
+                    autoCountingSummary.totalAuto?.percentage],
+                  ["Manual Total (HH:MM:SS)", autoCountingSummary.totalManual?.human       ?? "—",
+                    autoCountingSummary.totalManual?.percentage],
+                  ["Segments",  formatNumber(autoCountingSummary.totalSegments), null],
+                  ["Records",   formatNumber(autoCountingSummary.totalRecords),  null],
+                ].map(([label, value, pct]) => (
+                  <div className="duration-row" key={label}>
+                    <span className="duration-label">{label}</span>
+                    <span className="duration-value">
+                      {value}
+                      {pct != null && <span className="duration-pct"> ({pct}%)</span>}
+                    </span>
+                  </div>
+                ))}
               </div>
             )}
+            <div ref={pieRef}
+             style={{ width: "100%", minHeight: autoCountingResult ? 220 : 0 }} />
           </section>
 
           {/* RANGE VALUE ANALYSIS */}
           <section className="panel spv-record">
-            <h2>RANGE VALUE ANALYSIS</h2>
+            <h2>Range Analysis</h2>
             <label className="field">
               Set Point
-              <select
-                value={spValue}
+              <select value={spValue}
                 onChange={(e) => {
-                  setSpValue(e.target.value);
+                  const next = e.target.value;
+                  setSpValue(next);
                   setRangeValue(null);
+                  requestReportRefresh({ spColumn: next });
                 }}
-                disabled={!numericColumns.length}
-              >
+                disabled={!numericColumns.length}>
                 <option value="">(None)</option>
-                {numericColumns.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
+                {numericColumns.map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </label>
             <label className="field">
               Process Value
-              <select
-                value={pvValue}
+              <select value={pvValue}
                 onChange={(e) => {
-                  setPvValue(e.target.value);
+                  const next = e.target.value;
+                  setPvValue(next);
                   setRangeValue(null);
+                  requestReportRefresh({ pvColumn: next });
                 }}
-                disabled={!numericColumns.length}
-              >
+                disabled={!numericColumns.length}>
                 <option value="">(None)</option>
-                {numericColumns.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
+                {numericColumns.map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </label>
-            <button
-              type="button"
-              className="action-button"
+            <button type="button" className="action-button"
               onClick={handleRangeAnalysis}
-              disabled={!hasDataset || rangeAnalyzing}
-            >
-              {rangeAnalyzing ? "Analyzing..." : "ANALISIS SP & PV"}
+              disabled={!hasDataset || rangeAnalyzing}>
+              {rangeAnalyzing ? "Analyzing…" : "Analyse SP & PV"}
             </button>
+            <button
+              type = "button"
+              className = "action-button ghost"
+              disabled = {!spValue || !pvValue}
+              onClick = {handleAddPairToReport}
+              style = {{marginTop:"0.45rem"}}
+            >
+              {`+ Add to Report${spvPairs.length? `(${spvPairs.length})`:""}`}
+            </button>
+            {spvPairs.length > 0 && (
+              <div className = "duration-card" style = {{marginTop : "0.8rem"}}>
+                <div className = "duration-row" style = {{borderBottom : "none", paddingBottom : 0}}>
+                  <span className = "duration-label" style = {{fontWeigth:700}}>
+                    Range Value Report
+                  </span>
+                  <button
+                    type = "button"
+                    className = "y-remove"
+                    style = {{fontSize:"0.6rem",height:"22px",padding:"0 8px"}}
+                    onClick = {() => {
+                      setSpvPairs([]);
+                      setMessage("Data Deleted");
+                      requestReportRefresh({spvPairs:[]});
+                    }}
+                    >
+                      CLEAR
+                    </button>
+                </div>
+                {spvPairs.map((p,i) => (
+                  <div className = "duration-row" key = {i}>
+                    <span className = "duration-label">#{i+1}</span>
+                    <span className = "duration-value" style = {{fontSize : "0.7rem"}}>
+                      {p.sp} x {p.pv}
+                    </span>
+                    <button
+                      type = "button"
+                      className = "y-remove"
+                      style = {{fontSize : "0.5rem",height:"20px",padding:"0 6px",marginLeft : "6px"}}
+                      onClick={() => {
+                        const next = spvPairs.filter((_,idx) => idx !==i);
+                        setSpvPairs(next);
+                        requestReportRefresh({spvPairs:next}); 
+                      }}
+                    >
+                      X
+                    </button>
+                    </div>
+                ))}
+              </div>
+            )}
             {rangeValue && (
               <div className="duration-card">
                 <div className="duration-row">
                   <span className="duration-label">Total Records</span>
-                  <span className="duration-value">
-                    {formatNumber(rangeValue.total_records)}
-                  </span>
+                  <span className="duration-value">{formatNumber(rangeValue.total_records)}</span>
                 </div>
-                <div className="duration-row">
-                  <span className="duration-label">Dalam Set Point</span>
-                  <span className="duration-value">
-                    {formatNumber(rangeValue.summary.normal.count)}
-                    <span className="duration-pct">
-                      {" "}
-                      ({rangeValue.summary.normal.percentage}%)
+                {[
+                  ["Within Set Point",   rangeValue.summary.normal],
+                  ["Below SP",           rangeValue.summary.lower],
+                  ["Above SP",           rangeValue.summary.higher],
+                ].map(([label, s]) => (
+                  <div className="duration-row" key={label}>
+                    <span className="duration-label">{label}</span>
+                    <span className="duration-value">
+                      {formatNumber(s.count)}
+                      <span className="duration-pct"> ({s.percentage}%)</span>
                     </span>
-                  </span>
-                </div>
-                <div className="duration-row">
-                  <span className="duration-label">Lebih Rendah dari SP</span>
-                  <span className="duration-value">
-                    {formatNumber(rangeValue.summary.lower.count)}
-                    <span className="duration-pct">
-                      {" "}
-                      ({rangeValue.summary.lower.percentage}%)
-                    </span>
-                  </span>
-                </div>
-                <div className="duration-row">
-                  <span className="duration-label">Lebih Tinggi dari SP</span>
-                  <span className="duration-value">
-                    {formatNumber(rangeValue.summary.higher.count)}
-                    <span className="duration-pct">
-                      {" "}
-                      ({rangeValue.summary.higher.percentage}%)
-                    </span>
-                  </span>
-                </div>
+                  </div>
+                ))}
               </div>
             )}
-            <div
-              ref={rangeRef}
-              style={{ width: "100", minHeight: rangeValue ? 220 : 0 }}
-            />
+            <div ref={rangeRef}
+              style={{ width: "100%", minHeight: rangeValue ? 220 : 0 }} />
           </section>
-          {/* <section className="panel panel-empty" aria-hidden="false" /> */}
-        </div>
+
+        </div>{/* end bottom-row */}
       </main>
     </div>
   );
