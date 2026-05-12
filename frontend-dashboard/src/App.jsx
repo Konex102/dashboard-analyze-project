@@ -1,5 +1,5 @@
 // New Update
-import { useCallback, useEffect, uyyseMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import logo from "./assets/Sinarmas_logo.png";
 import "./App.css";
 
