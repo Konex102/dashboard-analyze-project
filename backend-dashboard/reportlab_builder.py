@@ -79,11 +79,13 @@ _MPL_RC = {
     "axes.facecolor":    "white",
 }
 
-def _px_to_in(px: int, dpi: int = 150) -> float:
+_DEFAULT_DPI = 220
+_PX_TO_PX = _DEFAULT_DPI/72
+
+def _px_to_in(px: int, dpi: int = 220) -> float:
     return px / dpi
 
-
-# ─── MATPLOTLIB CHART BUILDERS (return PNG bytes directly) ───────────────────
+# Matplotlib function image builder
 
 def _build_trend_png(
     df: pd.DataFrame,
@@ -91,8 +93,8 @@ def _build_trend_png(
     y_cols: list[str],
     title: str,
     dt_series: pd.Series | None = None,
-    w: int = 680,
-    h: int = 290,
+    w: int = 900,
+    h: int = 300,
 ) -> bytes | None:
     if not x_col or not y_cols:
         return None
@@ -102,7 +104,7 @@ def _build_trend_png(
         d = d.dropna(subset=["_x"]).sort_values("_x")
 
         with plt.rc_context(_MPL_RC):
-            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=150)
+            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=220)
             for i, col in enumerate(y_cols):
                 ax.plot(d["_x"], d[col], label=col,
                         color=_PAL[i % len(_PAL)], linewidth=1.5)
@@ -124,8 +126,8 @@ def _build_bar_png(
     x_col: str,
     y_cols: list[str],
     title: str,
-    w: int = 680,
-    h: int = 290,
+    w: int = 900,
+    h: int = 380,
 ) -> bytes | None:
     if not x_col or not y_cols:
         return None
@@ -137,7 +139,7 @@ def _build_bar_png(
         bar_w = 0.7 / n_bars
 
         with plt.rc_context(_MPL_RC):
-            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=150)
+            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=220)
             for i, col in enumerate(y_cols):
                 offset = (i - n_bars / 2 + 0.5) * bar_w
                 ax.bar(x_idx + offset, df[col], width=bar_w * 0.9,
@@ -153,75 +155,13 @@ def _build_bar_png(
     except Exception:
         return None
 
-
-def _build_area_png(
-    df: pd.DataFrame,
-    x_col: str,
-    y_cols: list[str],
-    title: str,
-    dt_series: pd.Series | None = None,
-    w: int = 680,
-    h: int = 290,
-) -> bytes | None:
-    if not x_col or not y_cols:
-        return None
-    try:
-        d = df.copy()
-        d["_x"] = dt_series if dt_series is not None else d[x_col]
-        d = d.dropna(subset=["_x"]).sort_values("_x")
-
-        with plt.rc_context(_MPL_RC):
-            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=150)
-            for i, col in enumerate(y_cols):
-                ax.fill_between(d["_x"], d[col], alpha=0.25,
-                                color=_PAL[i % len(_PAL)])
-                ax.plot(d["_x"], d[col], label=col,
-                        color=_PAL[i % len(_PAL)], linewidth=1.4)
-            ax.set_title(title, fontsize=10, fontweight="bold", pad=6)
-            if len(y_cols) > 1:
-                ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.22),
-                          ncol=min(4, len(y_cols)), fontsize=7, frameon=False)
-            fig.autofmt_xdate(rotation=30, ha="right")
-            plt.tight_layout()
-            return _fig_bytes(fig)
-    except Exception:
-        return None
-
-
-def _build_scatter_png(
-    df: pd.DataFrame,
-    x_col: str,
-    y_cols: list[str],
-    title: str,
-    w: int = 680,
-    h: int = 290,
-) -> bytes | None:
-    if not x_col or not y_cols:
-        return None
-    try:
-        with plt.rc_context(_MPL_RC):
-            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=150)
-            for i, col in enumerate(y_cols):
-                ax.scatter(df[x_col], df[col], label=col,
-                           color=_PAL[i % len(_PAL)], s=12, alpha=0.65)
-            ax.set_title(title, fontsize=10, fontweight="bold", pad=6)
-            ax.set_xlabel(x_col, fontsize=8)
-            if len(y_cols) > 1:
-                ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.22),
-                          ncol=min(4, len(y_cols)), fontsize=7, frameon=False)
-            plt.tight_layout()
-            return _fig_bytes(fig)
-    except Exception:
-        return None
-
-
 def _build_donut_png(
     labels: list[str],
     values: list[float],
     colors_: list[str],
     title: str = "",
-    w: int = 460,
-    h: int = 260,
+    w: int = 600,
+    h: int = 360,
 ) -> bytes | None:
     pairs = [(l, v, c) for l, v, c in zip(labels, values, colors_) if v > 0]
     if not pairs:
@@ -233,7 +173,7 @@ def _build_donut_png(
         total = sum(vals)
 
         with plt.rc_context({**_MPL_RC, "axes.grid": False}):
-            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=150)
+            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=220)
             wedges, texts, autotexts = ax.pie(
                 vals,
                 labels=None,
@@ -264,8 +204,8 @@ def _build_spv_bar_png(
     sp_col: str,
     pv_col: str,
     label: str,
-    w: int = 680,
-    h: int = 290,
+    w: int = 900,
+    h: int = 380,
 ) -> bytes | None:
     try:
         d = df.copy()
@@ -285,7 +225,7 @@ def _build_spv_bar_png(
         clrs   = ["#3B82F6", "#F59E0B", "#EF4444"]
 
         with plt.rc_context(_MPL_RC):
-            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=150)
+            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=220)
             bars = ax.bar(cats, counts, color=clrs, width=0.5)
             for bar, v in zip(bars, counts):
                 pct = v / total * 100 if total else 0
@@ -321,25 +261,19 @@ def _build_user_plot_png(
 
     if ct == "line":
         return _build_trend_png(df, x_col, y_cols, title, dt_series, w=w, h=h)
-    if ct == "area":
-        return _build_area_png(df, x_col, y_cols, title, dt_series, w=w, h=h)
     if ct == "bar":
         return _build_bar_png(df, x_col, y_cols, title, w=w, h=h)
-    if ct == "scatter":
-        return _build_scatter_png(df, x_col, y_cols, title, w=w, h=h)
     return None
 
 
-# ─── SHARED PNG → ReportLab Image helper ─────────────────────────────────────
+# ReportLab Image helper
 
-def _fig_bytes(fig) -> bytes:
-    """Save a matplotlib figure to PNG bytes and close the figure."""
+def _fig_bytes(fig,dpi : int = 220) -> bytes:
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight")
+    fig.savefig(buf, format="png", bbox_inches="tight",dpi=dpi)
     plt.close(fig)
     buf.seek(0)
     return buf.read()
-
 
 def _png_to_rl_image(
     png: bytes | None,
@@ -884,9 +818,9 @@ def _build_plots_section(
             pass
 
     col_w = (UW - 0.6 * cm) / 2
-    col_h = 5.2 * cm
-    px_w  = max(int(col_w / cm * 37.8), 400)   # pt → approx px at 96 dpi
-    px_h  = max(int(col_h / cm * 37.8), 220)
+    col_h = 5.8 * cm
+    px_w  = max(int(col_w * _PX_TO_PX), 600)
+    px_h  = max(int(col_h * _PX_TO_PX), 320)
 
     items: list[tuple] = []
     for cfg in plot_configs:
