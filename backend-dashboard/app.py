@@ -1,4 +1,7 @@
 import os
+import fcntl
+import threading
+
 os.environ["MPLCONFIGDIR"] = "/tmp/matplotlib_cache"
 os.environ["MPLBACKEND"] = "Agg"
 os.makedirs("/tmp/matplotlib_cache",exist_ok=True)
@@ -49,7 +52,6 @@ upload_dir = "/tmp/uploads"
 report_dir = "/tmp/reports"
 os.makedirs(upload_dir, exist_ok=True)
 os.makedirs(report_dir, exist_ok=True)
-
 metadata_path = os.path.join(upload_dir, "_metadata.json")
 jobs_path     = os.path.join(report_dir, "_jobs.json")
 
@@ -85,53 +87,98 @@ PAGE_W, PAGE_H = A4
 MARGIN         = 1.8 * cm
 
 # Metadata Helper
-def _load_metadata() -> dict:
-    if not os.path.exists(metadata_path):
+_metadata_lock = threading.Lock()
+_jobs_lock = threading.Lock()
+
+def _load_json_safe(path:str) -> dict:
+    if not os.path.exists(path):
         return {}
     try:
-        with open(metadata_path, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
+        with open(path,"r",encoding="utf-8") as fh:
+            fcntl.flock(fh,fcntl.LOCK_SH)
+            try:
+                data = json.load(fh)
+            finally:
+                fcntl.flock(fh,fcntl.LOCK_UN)
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}
 
-def _save_metadata(metadata: dict) -> None:
-    tmp = f"{metadata_path}.tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(metadata, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp, metadata_path)
+def _save_json_safe(path:str,data:dict) -> None:
+    tmp = f"{path}.tmp"
+    with open(tmp,"w",encoding="utf-8") as fh:
+        fcntl.flock(fh,fcntl.LOCK_EX)
+        try:
+            json.dump(data,fh,ensure_ascii=False,indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        finally:
+            fcntl.flock(fh,fcntl.LOCK_UN)
+    os.replace(tmp,path)
 
-def _set_metadata(filename: str, original_filename: str | None) -> None:
-    meta = _load_metadata()
-    meta[filename] = {"original_filename": original_filename or filename}
-    _save_metadata(meta)
+def _load_metadata() -> dict:
+    with _metadata_lock:
+        return _load_json_safe(metadata_path)
 
-def _remove_metadata(filename: str) -> None:
-    meta = _load_metadata()
-    if filename in meta:
-        del meta[filename]
-        _save_metadata(meta)
+def _save_metadata(metadata:dict) -> None:
+    with _metadata_lock:
+        _save_json_safe(metadata_path,metadata)
 
-# Background Report Tracking
+def _set_metadata(filename:str,original_filename:str|None) -> None:
+    with _metadata_lock:
+        meta = _load_json_safe(metadata_path)
+        meta[filename] = {"original_filename":original_filename or filename}
+        _save_json_safe(metadata_path, meta)
+        
+def _remove_metadata(filename:str) -> None:
+    with _metadata_lock:
+        meta = _load_json_safe(metadata_path)
+        if filename in meta:
+            del meta[filename]
+            _save_json_safe(metadata_path,meta)
+
+def _repair_metadata() -> None:
+    with _metadata_lock:
+        meta = _load_json_safe(metadata_path)
+        changed = False
+        
+        stale = [k for k in list(meta.keys()) if not os.path.exists(os.path.join(upload_dir,k))]
+
+        for k in stale:
+            del meta[k]
+            changed = True
+        
+        try:
+            existing_files = [
+                n for n in os.listdir(upload_dir)
+                if os.path.isfile(os.path.join(upload_dir,n))
+                and os.path.splitext(n)[1].lower() in allowed_extensions
+            ]
+        except OSError:
+            existing_files = []
+        
+        for fname in existing_files:
+            if fname not in meta:
+                meta[fname] = {"original_filename":fname}
+                changed = True
+        
+        if changed:
+            _save_json_safe(metadata_path,meta)
+_repair_metadata()
+
 def _load_jobs() -> dict:
-    if not os.path.exists(jobs_path):
-        return {}
-    try:
-        with open(jobs_path, "r", encoding="utf-8") as fh:
-            return json.load(fh)
-    except Exception:
-        return {}
+    with _jobs_lock:
+        return _load_json_safe(jobs_path)
 
-def _save_jobs(jobs: dict) -> None:
-    tmp = f"{jobs_path}.tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(jobs, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp, jobs_path)
+def _save_jobs(jobs:dict) -> None:
+    with _jobs_lock:
+        _save_json_safe(jobs_path,jobs)
 
 def _set_job(job_id: str, status: str, detail: str = "", filename: str = "") -> None:
-    jobs = _load_jobs()
-    jobs[job_id] = {"status": status, "detail": detail, "filename": filename}
-    _save_jobs(jobs)
+    with _jobs_lock:
+        jobs = _load_json_safe(jobs_path)
+        jobs[job_id] = {"status": status, "detail": detail, "filename": filename}
+        _save_json_safe(jobs_path, jobs)
 
 # Pydantic Models
 class AnalyzeRequest(BaseModel):
@@ -792,6 +839,7 @@ async def health_check():
 
 @app.get("/files")
 async def list_uploaded_files():
+    _repair_metadata()
     files = sorted([
         n for n in os.listdir(upload_dir)
         if os.path.isfile(os.path.join(upload_dir, n))
