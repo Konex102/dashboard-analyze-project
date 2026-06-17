@@ -198,7 +198,6 @@ def _build_donut_png(
     except Exception:
         return None
 
-
 def _build_spv_bar_png(
     df: pd.DataFrame,
     sp_col: str,
