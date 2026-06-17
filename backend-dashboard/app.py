@@ -268,17 +268,8 @@ def _resolve_file_path(filename: str) -> str:
     safe = os.path.basename(filename)
     path = os.path.join(upload_dir, safe)
     if not os.path.exists(path):
-        return path
-
-    meta = _load_metadata()
-    for storage_name, info in meta.items():
-        if info.get("original_filename") == safe:
-            candidate = os.path.join(upload_dir, storage_name)
-            if os.path.exists(candidate):
-                return candidate
-            
-    raise HTTPException(status_code=404, detail=f"File not found: {safe}")
-            
+        raise HTTPException(status_code=404, detail=f"File not found: {safe}")
+    return path
 
 def _read_csv(file_path: str, encoding: str) -> str:
     with open(file_path, encoding=encoding, newline="") as fh:
