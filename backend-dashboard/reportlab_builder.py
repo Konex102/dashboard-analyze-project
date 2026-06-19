@@ -82,7 +82,7 @@ _MPL_RC = {
 _DEFAULT_DPI = 300  # HD resolution (from 220)
 _PX_TO_PX = _DEFAULT_DPI/72
 
-def _px_to_in(px: int, dpi: int = 220) -> float:
+def _px_to_in(px: int, dpi: int = 300) -> float:
     return px / dpi
 
 # Matplotlib function image builder
@@ -173,26 +173,26 @@ def _build_donut_png(
         total = sum(vals)
 
         with plt.rc_context({**_MPL_RC, "axes.grid": False}):
-            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=220)
+            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=300)
             wedges, texts, autotexts = ax.pie(
                 vals,
                 labels=None,
                 colors=clrs,
                 autopct=lambda p: f"{p:.1f}%",
                 startangle=90,
-                wedgeprops=dict(width=0.52, edgecolor="white", linewidth=1.5),
+                wedgeprops=dict(width=0.52, edgecolor="white", linewidth=2),
                 pctdistance=0.75,
             )
             for at in autotexts:
-                at.set_fontsize(7)
+                at.set_fontsize(10)
                 at.set_color("white")
                 at.set_fontweight("bold")
             if title:
-                ax.set_title(title, fontsize=9, fontweight="bold", pad=4)
+                ax.set_title(title, fontsize=12, fontweight="bold", pad=8)
             legend_lbs = [f"{l}  {v:,.0f}" for l, v in zip(lbs, vals)]
             ax.legend(wedges, legend_lbs,
-                      loc="lower center", bbox_to_anchor=(0.5, -0.18),
-                      ncol=min(3, len(pairs)), fontsize=7, frameon=False)
+                      loc="lower center", bbox_to_anchor=(0.5, -0.15),
+                      ncol=min(3, len(pairs)), fontsize=9, frameon=False)
             plt.tight_layout()
             return _fig_bytes(fig)
     except Exception:
@@ -677,10 +677,10 @@ def _build_counting_section(counting: dict | None) -> list:
     png = _build_donut_png(
         ["Auto", "Manual"], [auto_s, manual_s],
         ["#1A56DB", "#DC2626"], "Auto / Manual",
-        w=460, h=260,
+        w=720, h=420,
     )
     if png:
-        img = _png_to_rl_image(png, UW * 0.5, 4.5 * cm)
+        img = _png_to_rl_image(png, UW * 0.55, 3.2 * cm)
         if img:
             t = Table([[img]], colWidths=[UW])
             t.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")]))
@@ -780,10 +780,10 @@ def _build_spv_section(
             values  = [sv["normal_count"], sv["lower_count"], sv["higher_count"]],
             colors_ = ["#1A56DB", "#D97706", "#DC2626"],
             title   = f"Distribusi SP & PV - {label}",
-            w=500, h=300,
+            w=800, h=480,
         )
         if png:
-            img = _png_to_rl_image(png, UW * 0.55, 5.5 * cm)
+            img = _png_to_rl_image(png, UW * 0.65, 3.9 * cm)
             if img:
                 t = Table([[img]], colWidths=[UW])
                 t.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")]))
