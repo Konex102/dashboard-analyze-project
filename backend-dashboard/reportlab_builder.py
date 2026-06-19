@@ -79,7 +79,7 @@ _MPL_RC = {
     "axes.facecolor":    "white",
 }
 
-_DEFAULT_DPI = 220
+_DEFAULT_DPI = 300  # HD resolution (from 220)
 _PX_TO_PX = _DEFAULT_DPI/72
 
 def _px_to_in(px: int, dpi: int = 220) -> float:
@@ -104,7 +104,7 @@ def _build_trend_png(
         d = d.dropna(subset=["_x"]).sort_values("_x")
 
         with plt.rc_context(_MPL_RC):
-            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=220)
+            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=300)
             for i, col in enumerate(y_cols):
                 ax.plot(d["_x"], d[col], label=col,
                         color=_PAL[i % len(_PAL)], linewidth=1.5)
@@ -139,7 +139,7 @@ def _build_bar_png(
         bar_w = 0.7 / n_bars
 
         with plt.rc_context(_MPL_RC):
-            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=220)
+            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=300)
             for i, col in enumerate(y_cols):
                 offset = (i - n_bars / 2 + 0.5) * bar_w
                 ax.bar(x_idx + offset, df[col], width=bar_w * 0.9,
@@ -224,7 +224,7 @@ def _build_spv_bar_png(
         clrs   = ["#3B82F6", "#F59E0B", "#EF4444"]
 
         with plt.rc_context(_MPL_RC):
-            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=220)
+            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=300)
             bars = ax.bar(cats, counts, color=clrs, width=0.5)
             for bar, v in zip(bars, counts):
                 pct = v / total * 100 if total else 0
