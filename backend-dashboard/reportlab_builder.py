@@ -677,10 +677,10 @@ def _build_counting_section(counting: dict | None) -> list:
     png = _build_donut_png(
         ["Auto", "Manual"], [auto_s, manual_s],
         ["#1A56DB", "#DC2626"], "Auto / Manual",
-        w=720, h=420,
+        w=900, h=540,
     )
     if png:
-        img = _png_to_rl_image(png, UW * 0.55, 3.2 * cm)
+        img = _png_to_rl_image(png, UW * 0.85, 5.1 * cm)
         if img:
             t = Table([[img]], colWidths=[UW])
             t.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")]))
@@ -780,10 +780,10 @@ def _build_spv_section(
             values  = [sv["normal_count"], sv["lower_count"], sv["higher_count"]],
             colors_ = ["#1A56DB", "#D97706", "#DC2626"],
             title   = f"Distribusi SP & PV - {label}",
-            w=800, h=480,
+            w=900, h=540,
         )
         if png:
-            img = _png_to_rl_image(png, UW * 0.65, 3.9 * cm)
+            img = _png_to_rl_image(png, UW * 0.85, 5.1 * cm)
             if img:
                 t = Table([[img]], colWidths=[UW])
                 t.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")]))
