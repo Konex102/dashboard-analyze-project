@@ -680,7 +680,7 @@ def _build_counting_section(counting: dict | None) -> list:
         w=900, h=540,
     )
     if png:
-        img = _png_to_rl_image(png, UW * 0.90, 5.4 * cm)
+        img = _png_to_rl_image(png, UW * 0.95, 5.8 * cm)
         if img:
             t = Table([[img]], colWidths=[UW])
             t.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")]))
