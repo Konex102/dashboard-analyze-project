@@ -230,7 +230,7 @@ def _build_donut_png(
                 ncol=min(3, len(pairs)),
                 fontsize=11, 
                 frameon=False,
-                handleLength=1.6,
+                handlelength=1.6,
                 handleheight=1.0,
                 columnspacing=2.0,
             )
