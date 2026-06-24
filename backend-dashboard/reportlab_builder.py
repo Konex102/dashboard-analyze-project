@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from cProfile import label
 import io
 import os
 from datetime import datetime
@@ -190,9 +191,9 @@ def _build_donut_png(
         _RC = {**_MPL_RC, "axes.grid": False, "figure.facecolor": "white"}
         with plt.rc_context(_RC):
             # Use consistent figure size for all donut charts - 9.0 inches wide, 4.5 inches tall
-            fig = plt.figure(figsize=(9.0, 4.5), dpi=150, facecolor="white")
+            fig = plt.figure(figsize=(10.0, 5.5), dpi=150, facecolor="white")
         
-            ax = fig.add_axes([0.15, 0.15, 0.70, 0.70])
+            ax = fig.add_axes([0.10, 0.25, 0.80, 0.60])
 
             # Create pie chart with only non-zero values
             wedges, texts, autotexts = ax.pie(
@@ -221,17 +222,13 @@ def _build_donut_png(
             legend_labels = [f"{l}  {v:,.0f}" for l, v in zip(lbs, vals)]
             ax.legend(
                 wedges, legend_labels,
-                loc="upper center", 
-                bbox_to_anchor=(0.5, -0.08),
-                ncol=3,  # Fixed to 3 columns for consistent layout
-                fontsize=11, 
+                loc="lower center", 
+                bbox_to_anchor=(0.5, -0.20),
+                ncol=2,
+                fontsize=10, 
                 frameon=False,
-                handlelength=1.5,
-                handleheight=1.0,
-                columnspacing=2.0,
             )
 
-            # Save to buffer
             buf = io.BytesIO()
             fig.savefig(buf, format="png", dpi=150, bbox_inches="tight", pad_inches=0.1)
             plt.close(fig)
@@ -744,10 +741,11 @@ def _build_counting_section(counting: dict | None) -> list:
     png = _build_donut_png(
         ["Auto", "Manual"], [auto_s, manual_s],
         ["#1A56DB", "#DC2626"], "Auto / Manual",
+        title   = f"Distribusi Penggunaan Mode Auto / Manual",
     )
     if png:
         print(f"[DEBUG] PNG generated for auto/manual ({len(png)} bytes)")
-        img = _png_to_rl_image(png, UW,UW * (525/1200))
+        img = _png_to_rl_image(png, UW * 0.95, UW * 0.48)
         if img:
             print("[DEBUG] Auto/manual image added to story")
             t = Table([[img]], colWidths=[UW])
@@ -864,7 +862,7 @@ def _build_spv_section(
         
         if png:
             print(f"[DEBUG] PNG generated successfully ({len(png)} bytes)")
-            img = _png_to_rl_image(png, UW,UW * (525/1200))
+            img = _png_to_rl_image(png, UW * 0.95,UW * 0.48)
             if img:
                 print(f"[DEBUG] Image added to story for {label}")
                 t = Table([[img]], colWidths=[UW])
