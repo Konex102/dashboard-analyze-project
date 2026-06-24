@@ -741,7 +741,6 @@ def _build_counting_section(counting: dict | None) -> list:
     png = _build_donut_png(
         ["Auto", "Manual"], [auto_s, manual_s],
         ["#1A56DB", "#DC2626"], "Auto / Manual",
-        title   = f"Distribusi Penggunaan Mode Auto / Manual",
     )
     if png:
         print(f"[DEBUG] PNG generated for auto/manual ({len(png)} bytes)")
