@@ -193,7 +193,7 @@ def _build_donut_png(
             # Use consistent figure size for all donut charts - 9.0 inches wide, 4.5 inches tall
             fig = plt.figure(figsize=(10.0, 5.5), dpi=150, facecolor="white")
         
-            ax = fig.add_axes([0.10, 0.25, 0.80, 0.60])
+            ax = fig.add_axes([0.15, 0.20, 0.70, 0.65])
 
             # Create pie chart with only non-zero values
             wedges, texts, autotexts = ax.pie(
@@ -202,6 +202,7 @@ def _build_donut_png(
                 colors=clrs,
                 autopct=lambda p: f"{p:.1f}%",
                 startangle=90,
+                radius=0.75,
                 wedgeprops=dict(width=0.55, edgecolor="white", linewidth=2.5),
                 pctdistance=0.76,
             )
@@ -740,7 +741,7 @@ def _build_counting_section(counting: dict | None) -> list:
     print(f"[DEBUG] Creating auto/manual donut chart: auto_s={auto_s}, manual_s={manual_s}")
     png = _build_donut_png(
         ["Auto", "Manual"], [auto_s, manual_s],
-        ["#1A56DB", "#DC2626"], "Auto / Manual",
+        ["#1A56DB", "#DC2626"], "Distribusi Penggunaan Auto Manual",
     )
     if png:
         print(f"[DEBUG] PNG generated for auto/manual ({len(png)} bytes)")
