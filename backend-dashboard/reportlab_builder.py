@@ -189,8 +189,10 @@ def _build_donut_png(
 
         _RC = {**_MPL_RC, "axes.grid": False, "figure.facecolor": "white"}
         with plt.rc_context(_RC):
-            fig = plt.figure(figsize=(8.0, 3.5), dpi=150, facecolor="white")
-            ax = fig.add_axes([0.20, 0.18, 0.60, 0.62])
+            # Use consistent figure size for all donut charts - 9.0 inches wide, 4.5 inches tall
+            fig = plt.figure(figsize=(9.0, 4.5), dpi=150, facecolor="white")
+        
+            ax = fig.add_axes([0.15, 0.15, 0.70, 0.70])
 
             # Create pie chart with only non-zero values
             wedges, texts, autotexts = ax.pie(
@@ -203,39 +205,39 @@ def _build_donut_png(
                 pctdistance=0.76,
             )
             for autotext in autotexts:
-                autotext.set_fontsize(12)
+                autotext.set_fontsize(13)
                 autotext.set_color("white")
                 autotext.set_fontweight("bold")
 
             if title:
                 fig.text(
-                    0.5, 0.95, title,
+                    0.5, 0.96, title,
                     ha="center", va="top",
-                    fontsize=11, fontweight="bold",
+                    fontsize=12, fontweight="bold",
                     color="#111827"
                 )
             
-            # Create legend with label and count
+            # Create legend with label and count - always use 3 columns for consistency
             legend_labels = [f"{l}  {v:,.0f}" for l, v in zip(lbs, vals)]
             ax.legend(
                 wedges, legend_labels,
                 loc="upper center", 
-                bbox_to_anchor=(0.5, -0.04),
-                ncol=min(3, len(pairs)),
-                fontsize=10, 
+                bbox_to_anchor=(0.5, -0.08),
+                ncol=3,  # Fixed to 3 columns for consistent layout
+                fontsize=11, 
                 frameon=False,
                 handlelength=1.5,
-                handleheight=0.9,
-                columnspacing=1.8,
+                handleheight=1.0,
+                columnspacing=2.0,
             )
 
             # Save to buffer
             buf = io.BytesIO()
-            fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+            fig.savefig(buf, format="png", dpi=150, bbox_inches="tight", pad_inches=0.1)
             plt.close(fig)
             buf.seek(0)
             png_bytes = buf.read()
-            print(f"[DEBUG] _build_donut_png: Successfully generated chart with {len(pairs)} categories")
+            print(f"[DEBUG] _build_donut_png: Successfully generated chart (9.0x4.5in, {len(pairs)} categories)")
             return png_bytes
         
     except Exception as e:
@@ -350,7 +352,7 @@ def _png_to_rl_image(
         return None
 
 
-# ─── PARAGRAPH STYLES ────────────────────────────────────────────────────────
+# PARAGRAPH STYLE
 
 def _ps(name: str, **kw) -> ParagraphStyle:
     return ParagraphStyle(
