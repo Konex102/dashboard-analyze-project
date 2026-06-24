@@ -170,16 +170,15 @@ def _build_donut_png(
         lbs   = [p[0] for p in pairs]
         vals  = [p[1] for p in pairs]
         clrs  = [p[2] for p in pairs]
-        
-        plot_W = _px_to_in(w, dpi=150)
-        plot_H = _px_to_in(h, dpi=150)
 
-        with plt.rc_context({**_MPL_RC, "axes.grid": False,"figure.facecolor":"white"}):
-            
-            fig = plt.figure(figsize=(plot_W,plot_H),dpi=150)
-            ax = fig.add_axes([0.25,0.18,0.50,0.64])
+        _RC = {**_MPL_RC, "axes.grid": False, "figure.facecolor": "white"}
+        with plt.rc_context(_RC):
 
-            wedges, texts, autotexts = ax.pie(
+            fig = plt.figure(figsize=(9.0,4.0),dpi=150,facecolor="white")
+
+            ax = fig.add_axes([0.25,0.20,0.50,0.62])
+
+            wedges, _, autotexts = ax.pie(
                 vals,
                 labels=None,
                 colors=clrs,
@@ -195,23 +194,23 @@ def _build_donut_png(
 
             if title:
                 fig.text(
-                    0.5,0.93,title,
+                    0.5,0.94,title,
                     ha="center",va="top",
                     fontSize=13,fontweight="bold",
                     color="#111827"
                 )
             
             legend_lbs = [f"{l}  {v:,.0f}" for l, v in zip(lbs, vals)]
-            leg = ax.legend(
+            ax.legend(
                 wedges, legend_lbs,
                 loc="upper center", 
-                bbox_to_anchor=(0.5, -0.08),
+                bbox_to_anchor=(0.5, -0.06),
                 ncol=min(3, len(pairs)),
                 fontsize=11, 
                 frameon=False,
                 handleLength=1.6,
                 handleheight=1.0,
-                columnspacing=1.5,
+                columnspacing=2.0,
             )
 
             buf = io.BytesIO()
