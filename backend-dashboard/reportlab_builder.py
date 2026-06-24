@@ -160,8 +160,8 @@ def _build_donut_png(
     values: list[float],
     colors_: list[str],
     title: str = "",
-    w: int = 600,
-    h: int = 400,
+    w: int = 1200,
+    h: int = 600,
 ) -> bytes | None:
     pairs = [(l, v, c) for l, v, c in zip(labels, values, colors_) if v > 0]
     if not pairs:
@@ -170,36 +170,56 @@ def _build_donut_png(
         lbs   = [p[0] for p in pairs]
         vals  = [p[1] for p in pairs]
         clrs  = [p[2] for p in pairs]
-        total = sum(vals)
+        
+        plot_W = _px_to_in(w, dpi=150)
+        plot_H = _px_to_in(h, dpi=150)
 
-        with plt.rc_context({**_MPL_RC, "axes.grid": False}):
-            fig, ax = plt.subplots(figsize=(_px_to_in(w), _px_to_in(h)), dpi=220)
+        with plt.rc_context({**_MPL_RC, "axes.grid": False,"figure.facecolor":"white"}):
+            
+            fig = plt.figure(figsize=(plot_W,plot_H),dpi=150)
+            ax = fig.add_axes([0.25,0.18,0.50,0.64])
+
             wedges, texts, autotexts = ax.pie(
                 vals,
                 labels=None,
                 colors=clrs,
                 autopct=lambda p: f"{p:.1f}%",
                 startangle=90,
-                wedgeprops=dict(width=0.52, edgecolor="white", linewidth=2),
-                pctdistance=0.75,
+                wedgeprops=dict(width=0.55, edgecolor="white", linewidth=2.5),
+                pctdistance=0.76,
             )
             for at in autotexts:
-                at.set_fontsize(11)
+                at.set_fontsize(13)
                 at.set_color("white")
                 at.set_fontweight("bold")
+
             if title:
-                ax.set_title(title, fontsize=12, fontweight="bold", pad=10)
+                fig.text(
+                    0.5,0.93,title,
+                    ha="center",va="top",
+                    fontSize=13,fontweight="bold",
+                    color="#111827"
+                )
             
             legend_lbs = [f"{l}  {v:,.0f}" for l, v in zip(lbs, vals)]
-            ax.legend(wedges, legend_lbs,
-                      loc="lower center", 
-                      bbox_to_anchor=(0.5, -0.28),
-                      ncol=min(3, len(pairs)), 
-                      fontsize=9, 
-                      frameon=False,
+            leg = ax.legend(
+                wedges, legend_lbs,
+                loc="upper center", 
+                bbox_to_anchor=(0.5, -0.08),
+                ncol=min(3, len(pairs)),
+                fontsize=11, 
+                frameon=False,
+                handleLength=1.6,
+                handleheight=1.0,
+                columnspacing=1.5,
             )
-            fig.subplots_adjust(bottom=0.22)
-            return _fig_bytes(fig)
+
+            buf = io.BytesIO()
+            fig.savefig(buf,format="png",dpi=150,bbox_inches=None)
+            plt.close(fig)
+            buf.seek(0)
+            return buf.read()
+        
     except Exception:
         return None
 
@@ -682,10 +702,9 @@ def _build_counting_section(counting: dict | None) -> list:
     png = _build_donut_png(
         ["Auto", "Manual"], [auto_s, manual_s],
         ["#1A56DB", "#DC2626"], "Auto / Manual",
-        w=600, h=400,
     )
     if png:
-        img = _png_to_rl_image(png, UW * 0.65, 4.2 * cm)
+        img = _png_to_rl_image(png, UW, 5.5 * cm)
         if img:
             t = Table([[img]], colWidths=[UW])
             t.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")]))
@@ -786,10 +805,9 @@ def _build_spv_section(
             values  = [sv["normal_count"], sv["lower_count"], sv["higher_count"]],
             colors_ = ["#1A56DB", "#D97706", "#DC2626"],
             title   = f"Distribusi SP & PV - {label}",
-            w=600, h=400,
         )
         if png:
-            img = _png_to_rl_image(png, UW * 0.65, 4.2 * cm)
+            img = _png_to_rl_image(png, UW, 5.5 * cm)
             if img:
                 t = Table([[img]], colWidths=[UW])
                 t.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")]))
