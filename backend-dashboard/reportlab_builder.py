@@ -177,14 +177,12 @@ def _build_donut_png(
     w: int = 1200,
     h: int = 600,
 ) -> bytes | None:
-    # Filter pairs but keep all if ALL are zero (for edge case handling)
-    pairs = [(l, v, c) for l, v, c in zip(labels, values, colors_) if v >= 0]
-    if not pairs:
-        return None
+    # Filter out zero and negative values - only render non-zero slices
+    pairs = [(l, v, c) for l, v, c in zip(labels, values, colors_) if v > 0]
     
     # If all values are zero or negative, return None
-    total_val = sum(p[1] for p in pairs)
-    if total_val <= 0:
+    if not pairs:
+        print(f"[DEBUG] _build_donut_png: No positive values to display. Values: {values}")
         return None
     
     try:
@@ -194,12 +192,11 @@ def _build_donut_png(
 
         _RC = {**_MPL_RC, "axes.grid": False, "figure.facecolor": "white"}
         with plt.rc_context(_RC):
+            fig = plt.figure(figsize=(9.0, 4.0), dpi=150, facecolor="white")
+            ax = fig.add_axes([0.25, 0.20, 0.50, 0.62])
 
-            fig = plt.figure(figsize=(9.0,4.0),dpi=150,facecolor="white")
-
-            ax = fig.add_axes([0.25,0.20,0.50,0.62])
-
-            wedges, _, autotexts = ax.pie(
+            # Create pie chart with only non-zero values
+            wedges, texts, autotexts = ax.pie(
                 vals,
                 labels=None,
                 colors=clrs,
@@ -208,22 +205,26 @@ def _build_donut_png(
                 wedgeprops=dict(width=0.55, edgecolor="white", linewidth=2.5),
                 pctdistance=0.76,
             )
-            for at in autotexts:
-                at.set_fontsize(13)
-                at.set_color("white")
-                at.set_fontweight("bold")
+            
+            # Format percentage text
+            for autotext in autotexts:
+                autotext.set_fontsize(13)
+                autotext.set_color("white")
+                autotext.set_fontweight("bold")
 
+            # Add title if provided
             if title:
                 fig.text(
-                    0.5,0.94,title,
-                    ha="center",va="top",
-                    fontSize=13,fontweight="bold",
+                    0.5, 0.94, title,
+                    ha="center", va="top",
+                    fontsize=13, fontweight="bold",
                     color="#111827"
                 )
             
-            legend_lbs = [f"{l}  {v:,.0f}" for l, v in zip(lbs, vals)]
+            # Create legend with label and count
+            legend_labels = [f"{l}  {v:,.0f}" for l, v in zip(lbs, vals)]
             ax.legend(
-                wedges, legend_lbs,
+                wedges, legend_labels,
                 loc="upper center", 
                 bbox_to_anchor=(0.5, -0.06),
                 ncol=min(3, len(pairs)),
@@ -234,15 +235,18 @@ def _build_donut_png(
                 columnspacing=2.0,
             )
 
+            # Save to buffer
             buf = io.BytesIO()
-            fig.savefig(buf,format="png",dpi=150,bbox_inches="tight")
+            fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
             plt.close(fig)
             buf.seek(0)
-            return buf.read()
+            png_bytes = buf.read()
+            print(f"[DEBUG] _build_donut_png: Successfully generated chart with {len(pairs)} categories")
+            return png_bytes
         
     except Exception as e:
         import traceback
-        print(f"Error in _build_donut_png: {e}")
+        print(f"[ERROR] _build_donut_png: Exception occurred - {e}")
         traceback.print_exc()
         try:
             plt.close("all")
@@ -339,10 +343,16 @@ def _png_to_rl_image(
     height_pt: float,
 ) -> Image | None:
     if not png:
+        print("[DEBUG] _png_to_rl_image: No PNG data provided")
         return None
     try:
-        return Image(io.BytesIO(png), width=width_pt, height=height_pt)
-    except Exception:
+        img = Image(io.BytesIO(png), width=width_pt, height=height_pt)
+        print(f"[DEBUG] _png_to_rl_image: Successfully converted {len(png)} bytes to ReportLab Image ({width_pt:.1f}pt x {height_pt:.1f}pt)")
+        return img
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] _png_to_rl_image: Failed to convert PNG - {e}")
+        traceback.print_exc()
         return None
 
 
@@ -734,23 +744,25 @@ def _build_counting_section(counting: dict | None) -> list:
     # Donut chart via Matplotlib
     auto_s   = auto_d.get("seconds",   0)
     manual_s = manual_d.get("seconds", 0)
-    print(f"[DEBUG] Auto/Manual chart: auto_s={auto_s}, manual_s={manual_s}")
+    print(f"[DEBUG] Creating auto/manual donut chart: auto_s={auto_s}, manual_s={manual_s}")
     png = _build_donut_png(
         ["Auto", "Manual"], [auto_s, manual_s],
         ["#1A56DB", "#DC2626"], "Auto / Manual",
     )
     if png:
+        print(f"[DEBUG] PNG generated for auto/manual ({len(png)} bytes)")
         img = _png_to_rl_image(png, UW, 5.5 * cm)
         if img:
+            print("[DEBUG] Auto/manual image added to story")
             t = Table([[img]], colWidths=[UW])
             t.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")]))
             story.append(t)
             story.append(Paragraph("Auto / Manual Record Distribution", S["caption"]))
             story.append(_sp(6))
         else:
-            print("[DEBUG] Auto/Manual chart: Failed to convert PNG to image")
+            print("[ERROR] Auto/Manual section: Failed to convert PNG to ReportLab Image")
     else:
-        print("[DEBUG] Auto/Manual chart: PNG generation failed - values may be zero")
+        print("[ERROR] Auto/Manual section: PNG generation returned None - auto_s and manual_s may both be zero")
 
     # Segment detail table (max 50 rows)
     story.append(Paragraph(
@@ -806,6 +818,7 @@ def _build_spv_section(
         story.append(_sp(8))
         return story
 
+    pair_count = 0
     for pair in spv_pairs:
         sp_c  = pair.get("sp")
         pv_c  = pair.get("pv")
@@ -815,11 +828,13 @@ def _build_spv_section(
             print(f"[DEBUG] Range Value Analysis: Skipping pair - sp_c={sp_c}, pv_c={pv_c}")
             continue
 
+        print(f"[DEBUG] Computing SPV for pair: {label}")
         sv = fn_compute_spv(df, sp_c, pv_c) if fn_compute_spv else None
         if not sv:
             print(f"[DEBUG] Range Value Analysis: fn_compute_spv returned None for pair {label}")
             continue
 
+        pair_count += 1
         ph_t = Table([[Paragraph(label, S["pair_hdr"])]], colWidths=[UW])
         ph_t.setStyle(TableStyle([
             ("BACKGROUND",    (0, 0), (-1, -1), BLUE_SOFT),
@@ -843,26 +858,36 @@ def _build_spv_section(
         story.append(_sp(6))
 
         # Donut via Matplotlib
-        print(f"[DEBUG] Range Value Analysis chart: normal={sv['normal_count']}, lower={sv['lower_count']}, higher={sv['higher_count']}")
+        print(f"[DEBUG] Creating donut chart for {label}: normal={sv['normal_count']}, lower={sv['lower_count']}, higher={sv['higher_count']}")
         png = _build_donut_png(
             labels  = ["Dalam SP", "Lebih Rendah", "Lebih Tinggi"],
             values  = [sv["normal_count"], sv["lower_count"], sv["higher_count"]],
             colors_ = ["#1A56DB", "#D97706", "#DC2626"],
             title   = f"Distribusi SP & PV - {label}",
         )
+        
         if png:
+            print(f"[DEBUG] PNG generated successfully ({len(png)} bytes)")
             img = _png_to_rl_image(png, UW, 5.5 * cm)
             if img:
+                print(f"[DEBUG] Image added to story for {label}")
                 t = Table([[img]], colWidths=[UW])
                 t.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")]))
                 story.append(t)
                 story.append(Paragraph(
                     f"Distribusi Nilai Range {label}", S["caption"]))
             else:
-                print(f"[DEBUG] Range Value Analysis chart {label}: Failed to convert PNG to image")
+                print(f"[ERROR] Range Value Analysis: Failed to convert PNG to ReportLab Image for {label}")
         else:
-            print(f"[DEBUG] Range Value Analysis chart {label}: PNG generation failed")
+            print(f"[ERROR] Range Value Analysis: PNG generation returned None for {label}")
+        
         story.append(_sp(10))
+    
+    if pair_count == 0:
+        print("[DEBUG] Range Value Analysis: No valid pairs were processed")
+        story.append(Paragraph("Tidak ada data range value yang dapat diproses.", S["muted"]))
+        story.append(_sp(8))
+    
     return story
 
 
