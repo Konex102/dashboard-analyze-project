@@ -117,7 +117,14 @@ def _build_trend_png(
             fig.autofmt_xdate(rotation=30, ha="right")
             plt.tight_layout()
             return _fig_bytes(fig)
-    except Exception:
+    except Exception as e:
+        import traceback
+        print(f"Error in _build_trend_png: {e}")
+        traceback.print_exc()
+        try:
+            plt.close("all")
+        except Exception:
+            pass
         return None
 
 
@@ -152,7 +159,14 @@ def _build_bar_png(
                           ncol=min(4, n_bars), fontsize=7, frameon=False)
             plt.tight_layout()
             return _fig_bytes(fig)
-    except Exception:
+    except Exception as e:
+        import traceback
+        print(f"Error in _build_bar_png: {e}")
+        traceback.print_exc()
+        try:
+            plt.close("all")
+        except Exception:
+            pass
         return None
 
 def _build_donut_png(
@@ -163,9 +177,16 @@ def _build_donut_png(
     w: int = 1200,
     h: int = 600,
 ) -> bytes | None:
-    pairs = [(l, v, c) for l, v, c in zip(labels, values, colors_) if v > 0]
+    # Filter pairs but keep all if ALL are zero (for edge case handling)
+    pairs = [(l, v, c) for l, v, c in zip(labels, values, colors_) if v >= 0]
     if not pairs:
         return None
+    
+    # If all values are zero or negative, return None
+    total_val = sum(p[1] for p in pairs)
+    if total_val <= 0:
+        return None
+    
     try:
         lbs   = [p[0] for p in pairs]
         vals  = [p[1] for p in pairs]
@@ -214,12 +235,19 @@ def _build_donut_png(
             )
 
             buf = io.BytesIO()
-            fig.savefig(buf,format="png",dpi=150,bbox_inches=None)
+            fig.savefig(buf,format="png",dpi=150,bbox_inches="tight")
             plt.close(fig)
             buf.seek(0)
             return buf.read()
         
-    except Exception:
+    except Exception as e:
+        import traceback
+        print(f"Error in _build_donut_png: {e}")
+        traceback.print_exc()
+        try:
+            plt.close("all")
+        except Exception:
+            pass
         return None
 
 def _build_spv_bar_png(
@@ -263,7 +291,14 @@ def _build_spv_bar_png(
                 mticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
             plt.tight_layout()
             return _fig_bytes(fig)
-    except Exception:
+    except Exception as e:
+        import traceback
+        print(f"Error in _build_spv_bar_png: {e}")
+        traceback.print_exc()
+        try:
+            plt.close("all")
+        except Exception:
+            pass
         return None
 
 
@@ -675,7 +710,8 @@ def _build_counting_section(counting: dict | None) -> list:
     story: list = [PageBreak(), _section_block("Auto / Manual Record"), _sp(6)]
 
     if not counting:
-        story.append(Paragraph("Kolom state tidak terdeteksi.", S["muted"]))
+        print("[DEBUG] Auto/Manual section: counting_result is None - state_column may not be set or data processing failed")
+        story.append(Paragraph("Kolom state tidak terdeteksi atau data tidak tersedia untuk analisis auto/manual.", S["muted"]))
         story.append(_sp(8))
         return story
 
@@ -698,6 +734,7 @@ def _build_counting_section(counting: dict | None) -> list:
     # Donut chart via Matplotlib
     auto_s   = auto_d.get("seconds",   0)
     manual_s = manual_d.get("seconds", 0)
+    print(f"[DEBUG] Auto/Manual chart: auto_s={auto_s}, manual_s={manual_s}")
     png = _build_donut_png(
         ["Auto", "Manual"], [auto_s, manual_s],
         ["#1A56DB", "#DC2626"], "Auto / Manual",
@@ -710,6 +747,10 @@ def _build_counting_section(counting: dict | None) -> list:
             story.append(t)
             story.append(Paragraph("Auto / Manual Record Distribution", S["caption"]))
             story.append(_sp(6))
+        else:
+            print("[DEBUG] Auto/Manual chart: Failed to convert PNG to image")
+    else:
+        print("[DEBUG] Auto/Manual chart: PNG generation failed - values may be zero")
 
     # Segment detail table (max 50 rows)
     story.append(Paragraph(
@@ -760,7 +801,8 @@ def _build_spv_section(
     story: list = [PageBreak(), _section_block("Range Value Analysis"), _sp(6)]
 
     if not spv_pairs:
-        story.append(Paragraph("Tidak Nilai Range Untuk Analisis", S["muted"]))
+        print("[DEBUG] Range Value Analysis section: spv_pairs is empty - set_point_column and process_value_column may not be configured")
+        story.append(Paragraph("Tidak ada pasangan nilai range untuk analisis (set_point_column dan process_value_column tidak dikonfigurasi).", S["muted"]))
         story.append(_sp(8))
         return story
 
@@ -770,10 +812,12 @@ def _build_spv_section(
         label = pair.get("label") or f"{sp_c} vs {pv_c}"
 
         if not sp_c or not pv_c:
+            print(f"[DEBUG] Range Value Analysis: Skipping pair - sp_c={sp_c}, pv_c={pv_c}")
             continue
 
         sv = fn_compute_spv(df, sp_c, pv_c) if fn_compute_spv else None
         if not sv:
+            print(f"[DEBUG] Range Value Analysis: fn_compute_spv returned None for pair {label}")
             continue
 
         ph_t = Table([[Paragraph(label, S["pair_hdr"])]], colWidths=[UW])
@@ -799,6 +843,7 @@ def _build_spv_section(
         story.append(_sp(6))
 
         # Donut via Matplotlib
+        print(f"[DEBUG] Range Value Analysis chart: normal={sv['normal_count']}, lower={sv['lower_count']}, higher={sv['higher_count']}")
         png = _build_donut_png(
             labels  = ["Dalam SP", "Lebih Rendah", "Lebih Tinggi"],
             values  = [sv["normal_count"], sv["lower_count"], sv["higher_count"]],
@@ -813,6 +858,10 @@ def _build_spv_section(
                 story.append(t)
                 story.append(Paragraph(
                     f"Distribusi Nilai Range {label}", S["caption"]))
+            else:
+                print(f"[DEBUG] Range Value Analysis chart {label}: Failed to convert PNG to image")
+        else:
+            print(f"[DEBUG] Range Value Analysis chart {label}: PNG generation failed")
         story.append(_sp(10))
     return story
 
