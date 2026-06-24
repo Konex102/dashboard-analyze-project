@@ -191,11 +191,9 @@ def _build_donut_png(
         _RC = {**_MPL_RC, "axes.grid": False, "figure.facecolor": "white"}
         with plt.rc_context(_RC):
             # Use consistent figure size for all donut charts - 9.0 inches wide, 4.5 inches tall
-            fig = plt.figure(figsize=(10.0, 5.5), dpi=150, facecolor="white")
-        
-            ax = fig.add_axes([0.15, 0.20, 0.70, 0.65])
+            fig = plt.figure(figsize=(6.5, 5.0), dpi=150, facecolor="white")
+            ax = fig.add_axes([0.10, 0.18, 0.80, 0.70])
 
-            # Create pie chart with only non-zero values
             wedges, texts, autotexts = ax.pie(
                 vals,
                 labels=None,
@@ -745,7 +743,7 @@ def _build_counting_section(counting: dict | None) -> list:
     )
     if png:
         print(f"[DEBUG] PNG generated for auto/manual ({len(png)} bytes)")
-        img = _png_to_rl_image(png, UW * 0.95, UW * 0.48)
+        img = _png_to_rl_image(png, UW * 0.60, UW * 0.46)
         if img:
             print("[DEBUG] Auto/manual image added to story")
             t = Table([[img]], colWidths=[UW])
@@ -862,7 +860,7 @@ def _build_spv_section(
         
         if png:
             print(f"[DEBUG] PNG generated successfully ({len(png)} bytes)")
-            img = _png_to_rl_image(png, UW * 0.95,UW * 0.48)
+            img = _png_to_rl_image(png, UW * 0.60, UW * 0.46)
             if img:
                 print(f"[DEBUG] Image added to story for {label}")
                 t = Table([[img]], colWidths=[UW])
