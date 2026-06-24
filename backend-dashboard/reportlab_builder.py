@@ -177,14 +177,11 @@ def _build_donut_png(
     w: int = 1200,
     h: int = 600,
 ) -> bytes | None:
-    # Filter out zero and negative values - only render non-zero slices
     pairs = [(l, v, c) for l, v, c in zip(labels, values, colors_) if v > 0]
-    
-    # If all values are zero or negative, return None
     if not pairs:
         print(f"[DEBUG] _build_donut_png: No positive values to display. Values: {values}")
         return None
-    
+
     try:
         lbs   = [p[0] for p in pairs]
         vals  = [p[1] for p in pairs]
@@ -192,8 +189,8 @@ def _build_donut_png(
 
         _RC = {**_MPL_RC, "axes.grid": False, "figure.facecolor": "white"}
         with plt.rc_context(_RC):
-            fig = plt.figure(figsize=(9.0, 4.0), dpi=150, facecolor="white")
-            ax = fig.add_axes([0.25, 0.20, 0.50, 0.62])
+            fig = plt.figure(figsize=(8.0, 3.5), dpi=150, facecolor="white")
+            ax = fig.add_axes([0.20, 0.18, 0.60, 0.62])
 
             # Create pie chart with only non-zero values
             wedges, texts, autotexts = ax.pie(
@@ -205,19 +202,16 @@ def _build_donut_png(
                 wedgeprops=dict(width=0.55, edgecolor="white", linewidth=2.5),
                 pctdistance=0.76,
             )
-            
-            # Format percentage text
             for autotext in autotexts:
-                autotext.set_fontsize(13)
+                autotext.set_fontsize(12)
                 autotext.set_color("white")
                 autotext.set_fontweight("bold")
 
-            # Add title if provided
             if title:
                 fig.text(
-                    0.5, 0.94, title,
+                    0.5, 0.95, title,
                     ha="center", va="top",
-                    fontsize=13, fontweight="bold",
+                    fontsize=11, fontweight="bold",
                     color="#111827"
                 )
             
@@ -226,13 +220,13 @@ def _build_donut_png(
             ax.legend(
                 wedges, legend_labels,
                 loc="upper center", 
-                bbox_to_anchor=(0.5, -0.06),
+                bbox_to_anchor=(0.5, -0.04),
                 ncol=min(3, len(pairs)),
-                fontsize=11, 
+                fontsize=10, 
                 frameon=False,
-                handlelength=1.6,
-                handleheight=1.0,
-                columnspacing=2.0,
+                handlelength=1.5,
+                handleheight=0.9,
+                columnspacing=1.8,
             )
 
             # Save to buffer
@@ -751,7 +745,7 @@ def _build_counting_section(counting: dict | None) -> list:
     )
     if png:
         print(f"[DEBUG] PNG generated for auto/manual ({len(png)} bytes)")
-        img = _png_to_rl_image(png, UW, 5.5 * cm)
+        img = _png_to_rl_image(png, UW,UW * (525/1200))
         if img:
             print("[DEBUG] Auto/manual image added to story")
             t = Table([[img]], colWidths=[UW])
@@ -868,7 +862,7 @@ def _build_spv_section(
         
         if png:
             print(f"[DEBUG] PNG generated successfully ({len(png)} bytes)")
-            img = _png_to_rl_image(png, UW, 5.5 * cm)
+            img = _png_to_rl_image(png, UW,UW * (525/1200))
             if img:
                 print(f"[DEBUG] Image added to story for {label}")
                 t = Table([[img]], colWidths=[UW])
